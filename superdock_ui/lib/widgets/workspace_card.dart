@@ -1,0 +1,167 @@
+import 'package:flutter/material.dart';
+
+import '../core/theme/colors.dart';
+import '../core/theme/spacing.dart';
+import 'animated_press.dart';
+import 'glass_card.dart';
+
+class WorkspaceCard extends StatelessWidget {
+  const WorkspaceCard({
+    super.key,
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.accentColor,
+    this.onLaunch,
+  });
+
+  final String title;
+  final String description;
+  final IconData icon;
+  final Color accentColor;
+  final VoidCallback? onLaunch;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedPress(
+      onTap: onLaunch,
+      child: GlassCard(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            AppColors.cardBackground,
+            accentColor.withValues(alpha: 0.08),
+          ],
+        ),
+        borderColor: accentColor.withValues(alpha: 0.2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: accentColor, size: 24),
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Expanded(
+              child: Text(
+                description,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                      height: 1.4,
+                    ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppSpacing.buttonRadius),
+                border: Border.all(color: accentColor.withValues(alpha: 0.5)),
+                boxShadow: [
+                  BoxShadow(
+                    color: accentColor.withValues(alpha: 0.2),
+                    blurRadius: 12,
+                  ),
+                ],
+              ),
+              child: Text(
+                'Launch',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: accentColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class NewWorkspaceCard extends StatelessWidget {
+  const NewWorkspaceCard({super.key, this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedPress(
+      onTap: onTap,
+      child: GlassCard(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        borderColor: AppColors.textMuted.withValues(alpha: 0.3),
+        child: CustomPaint(
+          painter: _DashedBorderPainter(
+            color: AppColors.textMuted.withValues(alpha: 0.4),
+            radius: AppSpacing.cardRadius,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.add,
+                size: 32,
+                color: AppColors.textMuted.withValues(alpha: 0.7),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                'New Workspace',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: AppColors.textMuted,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DashedBorderPainter extends CustomPainter {
+  _DashedBorderPainter({required this.color, required this.radius});
+
+  final Color color;
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    final rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(1, 1, size.width - 2, size.height - 2),
+      Radius.circular(radius),
+    );
+
+    final path = Path()..addRRect(rect);
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final end = distance + 6;
+        canvas.drawPath(
+          metric.extractPath(distance, end.clamp(0, metric.length)),
+          paint,
+        );
+        distance = end + 4;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
