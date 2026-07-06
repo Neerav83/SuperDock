@@ -12,6 +12,7 @@ const APP_PROCESS_NAMES = {
   Simulator: "Simulator",
   Xcode: "Xcode",
   Safari: "Safari",
+  Preview: "Preview",
 };
 
 const TRACKED_APPS = [
@@ -70,4 +71,30 @@ async function getProcesses() {
   return results.filter((p) => p.active);
 }
 
-module.exports = { getProcesses, isRunning, getProcessName };
+async function getAllProcesses() {
+  try {
+    const script =
+      'tell application "System Events" to get name of every process whose background only is false';
+    const { stdout } = await execFileAsync("osascript", ["-e", script]);
+    const names = stdout
+      .split(", ")
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+
+    return names.map((name) => ({
+      name,
+      detail: "Running",
+      active: true,
+    }));
+  } catch {
+    return getProcesses();
+  }
+}
+
+module.exports = {
+  getProcesses,
+  getAllProcesses,
+  isRunning,
+  getProcessName,
+};

@@ -6,38 +6,33 @@ En macOS command center för utvecklare. SuperDock kombinerar en Flutter-dashboa
 
 ```
 superdock/
-├── superdock-core/     # Node.js-backend (port 4545)
-└── superdock_ui/       # Flutter-app (macOS)
+├── superdock-core/          # Node.js-backend (port 4545)
+│   ├── index.js
+│   └── src/
+│       ├── actions.js       # Kör actions (open_app, shell, workspace)
+│       ├── config.js        # Flutter/Git-projektsökvägar
+│       ├── dock_actions.js  # Quick Actions-definitioner
+│       ├── history.js       # Action-logg
+│       ├── processes.js     # Aktiva appar
+│       ├── store.js         # Persistens till ~/.superdock/
+│       ├── system.js        # CPU, minne, disk
+│       ├── terminal.js      # Terminaloutput + WebSocket
+│       └── workspaces.js    # Workspace-definitioner + CRUD
+└── superdock_ui/            # Flutter-app (macOS)
+    └── lib/
+        ├── app.dart
+        ├── main.dart
+        ├── core/            # theme, models, services
+        ├── pages/           # dashboard_page.dart
+        └── widgets/         # glass_card, dock_button, dialogs, etc.
 ```
 
-### Backend (`superdock-core`)
+All data sparas i `~/.superdock/data.json`:
 
-```
-superdock-core/
-├── index.js
-└── src/
-    ├── actions.js      # open_app, shell, launch_workspace
-    ├── history.js      # Action-logg
-    ├── terminal.js     # Terminaloutput
-    ├── system.js       # CPU, minne, disk, uptime
-    ├── processes.js    # Aktiva appar
-    └── workspaces.js   # Workspace-definitioner
-```
-
-### Flutter (`superdock_ui`)
-
-```
-superdock_ui/lib/
-├── main.dart
-├── app.dart
-├── core/
-│   ├── theme/
-│   ├── models/
-│   └── services/
-├── widgets/
-└── pages/
-    └── dashboard_page.dart
-```
+- config (Flutter/Git-projektsökvägar)
+- action-historik
+- terminaloutput
+- anpassade workspaces
 
 ## Krav
 
@@ -55,7 +50,16 @@ npm install
 npm start
 ```
 
-Backenden körs på `http://localhost:4545`.
+Backenden körs på `http://127.0.0.1:4545`.
+
+Miljövariabler (valfritt):
+
+| Variabel | Beskrivning |
+|----------|-------------|
+| `PORT` | Port (standard `4545`) |
+| `HOST` | Bind-adress (standard `127.0.0.1`) |
+| `SUPERDOCK_FLUTTER_PROJECT` | Standard Flutter-projektsökväg |
+| `SUPERDOCK_GIT_PROJECT` | Standard Git-projektsökväg |
 
 ### 2. Starta Flutter-appen
 
@@ -65,51 +69,94 @@ flutter pub get
 flutter run -d macos
 ```
 
-Appen pollar backenden var 3:e sekund. Om backenden inte är igång visas "Offline" i topbaren.
+Appen kan **auto-starta backenden** om den är offline (aktiveras i Settings). Systemdata pollas var 3:e sekund. Terminalen uppdateras via WebSocket (`/terminal/ws`).
+
+> **Tips:** Starta om backenden efter koduppdateringar så att nya endpoints laddas.
+
+## Settings (i appen)
+
+| Inställning | Beskrivning |
+|-------------|-------------|
+| Backend URL | Standard `http://127.0.0.1:4545` |
+| Backend core path | Sökväg till `superdock-core` (för auto-start) |
+| Auto-start backend | Startar `node index.js` om backenden är offline |
+| Flutter project path | Krävs för Flutter Run och Flutter Dev-workspace |
+| Git project path | Krävs för Git Pull |
+
+Inställningarna synkas till backendens `/config` vid sparning.
 
 ## API
 
 | Metod | Endpoint | Beskrivning |
 |-------|----------|-------------|
-| `GET` | `/status` | Hostname, plattform, anslutningsstatus |
-| `GET` | `/system` | CPU, minne, disk, uptime och sparklines |
-| `GET` | `/processes` | Aktiva appar (Docker, Cursor, VS Code, Terminal) |
+| `GET` | `/status` | Hostname, plattform |
+| `GET` | `/system` | CPU, minne, disk, uptime, sparklines |
+| `GET` | `/processes` | Spårade aktiva appar |
+| `GET` | `/processes/all` | Alla GUI-processer |
+| `GET` | `/actions` | Quick Actions |
 | `GET` | `/history` | Senaste actions (`?limit=10`) |
-| `GET` | `/terminal` | Terminaloutput (live vid shell-kommandon) |
-| `GET` | `/workspaces` | Tillgängliga workspaces |
-| `GET` | `/config` | Backend-konfiguration (t.ex. Flutter-projektsökväg) |
-| `PUT` | `/config` | Uppdatera backend-konfiguration |
-| `POST` | `/run` | Kör en action |
+| `GET` | `/terminal` | Terminaloutput |
+| `WS` | `/terminal/ws` | Live terminalstream |
+| `GET` | `/workspaces` | Workspaces |
+| `POST` | `/workspaces` | Skapa workspace |
+| `PUT` | `/workspaces/:id` | Uppdatera workspace |
+| `DELETE` | `/workspaces/:id` | Ta bort workspace |
+| `GET` | `/config` | Backend-konfiguration |
+| `PUT` | `/config` | Uppdatera config |
+| `POST` | `/run` | Kör action |
 
 ### Actions (`POST /run`)
 
 ```json
-{ "action": "open_app", "payload": { "name": "Visual Studio Code" } }
-```
-
-```json
-{ "action": "shell", "payload": { "cmd": "git pull" } }
+{ "action": "run_dock_action", "payload": { "id": "vscode" } }
 ```
 
 ```json
 { "action": "launch_workspace", "payload": { "id": "flutter-dev" } }
 ```
 
-Tillgängliga workspace-id:n: `flutter-dev`, `ai-mode`, `server-mode`, `design-mode`.
+```json
+{ "action": "open_app", "payload": { "name": "Visual Studio Code" } }
+```
+
+```json
+{ "action": "shell", "payload": { "cmd": "git pull", "cwd": "/path/to/repo" } }
+```
+
+### Config (`PUT /config`)
+
+```json
+{
+  "flutterProjectPath": "/Users/you/projects/my_flutter_app",
+  "gitProjectPath": "/Users/you/projects/my_repo"
+}
+```
 
 ## Funktioner
 
-- **Quick Actions** — öppna appar eller kör shell-kommandon med ett klick
-- **Workspaces** — starta fördefinierade uppsättningar av appar
-- **System Overview** — live CPU, minne och disk med sparklines
-- **Active Processes** — visar vilka appar som körs just nu
-- **Recent Actions** — logg över senaste kommandon
-- **Terminal Output** — stdout/stderr från shell-kommandon i realtid
+- **Dashboard** — Quick Actions, workspaces, recent actions, terminal
+- **Workspaces-vy** — fokus på workspaces + terminal
+- **Actions-vy** — fokus på Quick Actions + historik
+- **Quick Actions** — hämtas från backend (`GET /actions`)
+- **Workspaces** — skapa via `+ New Workspace`, redigera/radera med **long-press**
+- **System Overview** — live CPU, minne, disk med sparklines
+- **Active Processes** — "View all processes" visar alla GUI-appar
+- **Terminal** — WebSocket-stream vid shell-körning
+- **Tangentbordsgenvägar** — ⌘1–⌘4 för de första workspaces
+
+### Standard-workspaces
+
+| ID | Namn |
+|----|------|
+| `flutter-dev` | Flutter Dev |
+| `ai-mode` | AI Mode |
+| `server-mode` | Server Mode |
+| `design-mode` | Design Mode |
 
 ## Utveckling
 
-Backenden är byggd för macOS och använder `open`, `pgrep`, `top`, `vm_stat` och `docker` för systemintegration.
+Backenden är byggd för macOS och använder `open`, `osascript`, `pgrep`, `top`, `vm_stat` och `docker`.
 
-Flutter-appen kommunicerar med backenden via `SuperDockApi` i `superdock_ui/lib/core/services/api.dart`. API-URL:en är `http://127.0.0.1:4545` som standard och kan ändras under **Settings** i appen.
+Flutter kommunicerar via `SuperDockApi` i `superdock_ui/lib/core/services/api.dart`.
 
-Flutter-projektsökvägen konfigureras i Settings och synkas till backenden. Den krävs för **Flutter Run** och **Flutter Dev**-workspacet.
+Quick Actions konfigureras i `superdock-core/src/dock_actions.js`. Workspaces kan ändras i UI:t eller direkt i den sparade datan under `~/.superdock/data.json`.

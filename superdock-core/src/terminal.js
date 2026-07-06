@@ -1,17 +1,26 @@
+const store = require("./store");
+
 const MAX_LINES = 200;
 
-const lines = [
-  "> SuperDock Core ready",
-  "Waiting for commands...",
-];
+let broadcaster = null;
 
-let live = false;
+function setBroadcaster(fn) {
+  broadcaster = fn;
+}
+
+function notify() {
+  if (!broadcaster) return;
+  broadcaster(getOutput());
+}
 
 function append(line) {
-  lines.push(line);
-  if (lines.length > MAX_LINES) {
-    lines.splice(0, lines.length - MAX_LINES);
-  }
+  store.update((data) => {
+    data.terminal.lines.push(line);
+    if (data.terminal.lines.length > MAX_LINES) {
+      data.terminal.lines.splice(0, data.terminal.lines.length - MAX_LINES);
+    }
+  });
+  notify();
 }
 
 function appendChunk(chunk) {
@@ -20,22 +29,44 @@ function appendChunk(chunk) {
     .split(/\r?\n/)
     .filter((line) => line.length > 0);
 
-  for (const part of parts) {
-    append(part);
-  }
+  if (parts.length === 0) return;
+
+  store.update((data) => {
+    for (const part of parts) {
+      data.terminal.lines.push(part);
+    }
+    if (data.terminal.lines.length > MAX_LINES) {
+      data.terminal.lines.splice(0, data.terminal.lines.length - MAX_LINES);
+    }
+  });
+  notify();
 }
 
 function setLive(value) {
-  live = value;
+  store.update((data) => {
+    data.terminal.live = value;
+  });
+  notify();
 }
 
 function getOutput() {
-  return { live, lines: [...lines] };
+  const terminal = store.getData().terminal;
+  return { live: terminal.live, lines: [...terminal.lines] };
 }
 
 function clear() {
-  lines.length = 0;
-  append("> Terminal cleared");
+  store.update((data) => {
+    data.terminal.lines = ["> Terminal cleared"];
+    data.terminal.live = false;
+  });
+  notify();
 }
 
-module.exports = { append, appendChunk, setLive, getOutput, clear };
+module.exports = {
+  append,
+  appendChunk,
+  setLive,
+  getOutput,
+  clear,
+  setBroadcaster,
+};

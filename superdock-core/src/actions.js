@@ -3,6 +3,7 @@ const { promisify } = require("util");
 const history = require("./history");
 const terminal = require("./terminal");
 const workspaces = require("./workspaces");
+const dockActions = require("./dock_actions");
 const { getProcessName } = require("./processes");
 
 const execAsync = promisify(exec);
@@ -95,7 +96,7 @@ async function launchWorkspace(id) {
   terminal.append(`> Launching workspace: ${definition.name}`);
 
   for (const rawAction of definition.actions) {
-    const action = workspaces.resolveAction(rawAction);
+    const action = dockActions.resolveAction(rawAction);
     if (action.type === "open_app") {
       await openApp(action.name);
     } else if (action.type === "shell") {
@@ -105,6 +106,26 @@ async function launchWorkspace(id) {
 
   history.addEntry(`Launched ${definition.name}`);
   return { ok: true, workspace: definition.name };
+}
+
+async function runDockAction(id) {
+  const action = dockActions.getActionById(id);
+  if (!action) {
+    throw new Error(`Unknown action: ${id}`);
+  }
+
+  if (action.type === "open_app") {
+    await openApp(action.appName);
+    return { ok: true };
+  }
+
+  if (action.type === "shell") {
+    const resolved = dockActions.resolveAction(action);
+    await runShell(resolved.cmd, resolved.cwd);
+    return { ok: true };
+  }
+
+  throw new Error(`Unsupported action type: ${action.type}`);
 }
 
 async function runAction(action, payload = {}) {
@@ -119,6 +140,9 @@ async function runAction(action, payload = {}) {
 
     case "launch_workspace":
       return launchWorkspace(payload.id);
+
+    case "run_dock_action":
+      return runDockAction(payload.id);
 
     default:
       throw new Error(`Unknown action: ${action}`);

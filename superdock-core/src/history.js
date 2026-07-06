@@ -1,17 +1,18 @@
+const store = require("./store");
+
 const MAX_ENTRIES = 50;
 
-const entries = [];
-
 function addEntry(label, success = true) {
-  entries.unshift({
-    label,
-    success,
-    timestamp: new Date().toISOString(),
+  store.update((data) => {
+    data.history.unshift({
+      label,
+      success,
+      timestamp: new Date().toISOString(),
+    });
+    if (data.history.length > MAX_ENTRIES) {
+      data.history.length = MAX_ENTRIES;
+    }
   });
-
-  if (entries.length > MAX_ENTRIES) {
-    entries.length = MAX_ENTRIES;
-  }
 }
 
 function formatRelative(isoString) {
@@ -28,7 +29,7 @@ function formatRelative(isoString) {
 }
 
 function getHistory(limit = 10) {
-  return entries.slice(0, limit).map((entry) => ({
+  return store.getData().history.slice(0, limit).map((entry) => ({
     label: entry.label,
     success: entry.success,
     timestamp: entry.timestamp,

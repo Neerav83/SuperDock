@@ -1,11 +1,17 @@
+const http = require("http");
 const express = require("express");
+const { WebSocketServer } = require("ws");
+const store = require("./src/store");
 const history = require("./src/history");
 const terminal = require("./src/terminal");
 const system = require("./src/system");
 const processes = require("./src/processes");
 const workspaces = require("./src/workspaces");
+const dockActions = require("./src/dock_actions");
 const config = require("./src/config");
 const { runAction } = require("./src/actions");
+
+store.load();
 
 const app = express();
 const PORT = process.env.PORT || 4545;
@@ -35,6 +41,15 @@ app.get("/processes", async (_req, res) => {
   }
 });
 
+app.get("/processes/all", async (_req, res) => {
+  try {
+    const list = await processes.getAllProcesses();
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/history", (_req, res) => {
   const limit = parseInt(_req.query.limit || "10", 10);
   res.json(history.getHistory(limit));
@@ -44,8 +59,36 @@ app.get("/terminal", (_req, res) => {
   res.json(terminal.getOutput());
 });
 
+app.get("/actions", (_req, res) => {
+  res.json(dockActions.listActions());
+});
+
 app.get("/workspaces", (_req, res) => {
   res.json(workspaces.listWorkspaces());
+});
+
+app.post("/workspaces", (req, res) => {
+  try {
+    res.status(201).json(workspaces.createWorkspace(req.body || {}));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put("/workspaces/:id", (req, res) => {
+  try {
+    res.json(workspaces.updateWorkspace(req.params.id, req.body || {}));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete("/workspaces/:id", (req, res) => {
+  try {
+    res.json(workspaces.deleteWorkspace(req.params.id));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.get("/config", (_req, res) => {
@@ -75,6 +118,23 @@ app.post("/run", async (req, res) => {
   }
 });
 
-app.listen(PORT, HOST, () => {
+const server = http.createServer(app);
+
+const wss = new WebSocketServer({ server, path: "/terminal/ws" });
+
+terminal.setBroadcaster((output) => {
+  const message = JSON.stringify(output);
+  for (const client of wss.clients) {
+    if (client.readyState === 1) {
+      client.send(message);
+    }
+  }
+});
+
+wss.on("connection", (socket) => {
+  socket.send(JSON.stringify(terminal.getOutput()));
+});
+
+server.listen(PORT, HOST, () => {
   console.log(`SuperDock Core running on http://${HOST}:${PORT}`);
 });

@@ -11,7 +11,9 @@ import '../core/models/system_stats.dart';
 import '../core/models/terminal_output.dart';
 import '../core/models/workspace.dart';
 import '../core/services/api.dart';
+import '../core/services/backend_launcher.dart';
 import '../core/services/settings_service.dart';
+import '../core/services/terminal_stream_service.dart';
 import '../core/theme/colors.dart';
 import '../core/theme/spacing.dart';
 import '../widgets/dock_button.dart';
@@ -20,6 +22,7 @@ import '../widgets/section_title.dart';
 import '../widgets/settings_dialog.dart';
 import '../widgets/status_card.dart';
 import '../widgets/workspace_card.dart';
+import '../widgets/workspace_dialog.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -31,12 +34,15 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   final _settingsService = SettingsService();
   SuperDockApi _api = SuperDockApi();
+  late TerminalStreamService _terminalStream;
   AppSettings _settings = const AppSettings(
     backendUrl: SettingsService.defaultBackendUrl,
   );
 
   int _selectedNav = 0;
   Timer? _pollTimer;
+  StreamSubscription<TerminalOutput>? _terminalSubscription;
+  bool _terminalStreamConnected = false;
 
   ConnectionStatus? _status;
   SystemStats? _systemStats;
@@ -44,87 +50,15 @@ class _DashboardPageState extends State<DashboardPage> {
   List<ActionHistoryEntry> _history = [];
   TerminalOutput? _terminal;
   List<Workspace> _workspaces = [];
+  List<DockAction> _dockActions = [];
   bool _backendConnected = false;
-  int? _loadingActionIndex;
+  String? _loadingActionId;
   String? _loadingWorkspaceId;
-
-  static const _dockActions = [
-    DockAction(
-      title: 'VS Code',
-      icon: Icons.code,
-      status: 'Open',
-      accentColor: AppColors.blue,
-      appName: 'Visual Studio Code',
-    ),
-    DockAction(
-      title: 'Cursor',
-      icon: Icons.auto_awesome,
-      status: 'Open',
-      accentColor: AppColors.purple,
-      appName: 'Cursor',
-    ),
-    DockAction(
-      title: 'Docker',
-      icon: Icons.dns,
-      status: 'Start',
-      accentColor: AppColors.cyan,
-      appName: 'Docker',
-    ),
-    DockAction(
-      title: 'Figma',
-      icon: Icons.design_services,
-      status: 'Open',
-      accentColor: AppColors.orange,
-      appName: 'Figma',
-    ),
-    DockAction(
-      title: 'Terminal',
-      icon: Icons.terminal,
-      status: 'Open',
-      accentColor: AppColors.green,
-      appName: 'Terminal',
-    ),
-    DockAction(
-      title: 'Flutter Run',
-      icon: Icons.play_arrow,
-      status: 'Run Project',
-      accentColor: AppColors.purple,
-      shellCommand: 'flutter run',
-      usesFlutterProject: true,
-    ),
-    DockAction(
-      title: 'Git Pull',
-      icon: Icons.download,
-      status: 'Update',
-      accentColor: AppColors.orange,
-      shellCommand: 'git pull',
-    ),
-    DockAction(
-      title: 'Simulator',
-      icon: Icons.phone_iphone,
-      status: 'Open',
-      accentColor: AppColors.blue,
-      appName: 'Simulator',
-    ),
-    DockAction(
-      title: 'Xcode',
-      icon: Icons.apple,
-      status: 'Open',
-      accentColor: AppColors.blue,
-      appName: 'Xcode',
-    ),
-    DockAction(
-      title: 'Safari',
-      icon: Icons.language,
-      status: 'Open',
-      accentColor: AppColors.cyan,
-      appName: 'Safari',
-    ),
-  ];
 
   @override
   void initState() {
     super.initState();
+    _terminalStream = TerminalStreamService(_api);
     _initialize();
   }
 
@@ -135,9 +69,19 @@ class _DashboardPageState extends State<DashboardPage> {
     setState(() {
       _settings = settings;
       _api = SuperDockApi(baseUrl: settings.backendUrl);
+      _terminalStream = TerminalStreamService(_api);
     });
 
+    if (settings.autoStartBackend) {
+      await BackendLauncher.ensureRunning(
+        baseUrl: settings.backendUrl,
+        corePath: settings.backendCorePath,
+      );
+    }
+
+    await _connectTerminalStream();
     await _syncBackendConfig();
+    await _loadActions();
     await _loadWorkspaces();
     await _refresh();
 
@@ -145,20 +89,60 @@ class _DashboardPageState extends State<DashboardPage> {
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) => _refresh());
   }
 
+  Future<void> _connectTerminalStream() async {
+    await _terminalSubscription?.cancel();
+    _terminalSubscription = null;
+
+    try {
+      await _terminalStream.connect();
+      _terminalSubscription = _terminalStream.stream.listen((output) {
+        if (!mounted) return;
+        setState(() {
+          _terminal = output;
+          _terminalStreamConnected = true;
+        });
+      });
+      if (mounted) setState(() => _terminalStreamConnected = true);
+    } catch (_) {
+      if (mounted) setState(() => _terminalStreamConnected = false);
+    }
+  }
+
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _terminalSubscription?.cancel();
+    _terminalStream.dispose();
     super.dispose();
   }
 
   Future<void> _syncBackendConfig() async {
-    final projectPath = _settings.flutterProjectPath;
-    if (projectPath == null || projectPath.isEmpty) return;
+    final payload = <String, dynamic>{};
+    final flutterPath = _settings.flutterProjectPath;
+    final gitPath = _settings.gitProjectPath;
+
+    if (flutterPath != null && flutterPath.isNotEmpty) {
+      payload['flutterProjectPath'] = flutterPath;
+    }
+    if (gitPath != null && gitPath.isNotEmpty) {
+      payload['gitProjectPath'] = gitPath;
+    }
+    if (payload.isEmpty) return;
 
     try {
-      await _api.updateConfig({'flutterProjectPath': projectPath});
+      await _api.updateConfig(payload);
     } catch (_) {
       // Backend may be offline during startup.
+    }
+  }
+
+  Future<void> _loadActions() async {
+    try {
+      final actions = await _api.getActions();
+      if (!mounted) return;
+      setState(() => _dockActions = actions);
+    } catch (error) {
+      _showError('Could not load actions: $error');
     }
   }
 
@@ -191,10 +175,15 @@ class _DashboardPageState extends State<DashboardPage> {
       _api.getHistory().then((history) {
         if (mounted) setState(() => _history = history);
       }),
-      _api.getTerminal().then((terminal) {
-        if (mounted) setState(() => _terminal = terminal);
-      }),
     ];
+
+    if (!_terminalStreamConnected) {
+      refreshTasks.add(
+        _api.getTerminal().then((terminal) {
+          if (mounted) setState(() => _terminal = terminal);
+        }),
+      );
+    }
 
     await Future.wait(
       refreshTasks.map(
@@ -224,30 +213,16 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Future<void> _handleDockAction(DockAction action, int index) async {
-    if (_loadingActionIndex != null) return;
+  Future<void> _handleDockAction(DockAction action) async {
+    if (_loadingActionId != null) return;
 
-    setState(() => _loadingActionIndex = index);
+    setState(() => _loadingActionId = action.id);
     try {
-      if (action.appName != null) {
-        await _api.openApp(action.appName!);
-      } else if (action.shellCommand != null) {
-        if (action.usesFlutterProject) {
-          final projectPath = _settings.flutterProjectPath;
-          if (projectPath == null || projectPath.isEmpty) {
-            throw Exception(
-              'Flutter project path is not configured. Open Settings to set it.',
-            );
-          }
-          await _api.runShell(action.shellCommand!, cwd: projectPath);
-        } else {
-          await _api.runShell(action.shellCommand!);
-        }
-      }
+      await _api.runDockAction(action.id);
     } catch (error) {
       _showError(error.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (mounted) setState(() => _loadingActionIndex = null);
+      if (mounted) setState(() => _loadingActionId = null);
       _refresh();
     }
   }
@@ -286,13 +261,87 @@ class _DashboardPageState extends State<DashboardPage> {
     });
 
     await _syncBackendConfig();
+    await _connectTerminalStream();
+    await _loadActions();
     await _loadWorkspaces();
     await _refresh();
     _showInfo('Settings saved.');
   }
 
-  void _showAllProcessesDialog() {
-    showDialog<void>(
+  Future<void> _openCreateWorkspace() async {
+    final result = await showDialog<Object?>(
+      context: context,
+      builder: (context) => const WorkspaceDialog(),
+    );
+
+    if (result is! WorkspaceFormData || !mounted) return;
+
+    try {
+      await _api.createWorkspace(result.toPayload());
+      await _loadWorkspaces();
+      _showInfo('Workspace created.');
+    } catch (error) {
+      _showError(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _openEditWorkspace(Workspace workspace) async {
+    final apps = workspace.actions
+        .where((action) => action['type'] == 'open_app')
+        .map((action) => action['name'])
+        .join(', ');
+    final shell = workspace.actions
+        .where((action) => action['type'] == 'shell')
+        .map((action) => action['cmd'])
+        .join(', ');
+
+    final result = await showDialog<Object?>(
+      context: context,
+      builder: (context) => WorkspaceDialog(
+        isEdit: true,
+        workspaceId: workspace.id,
+        initialName: workspace.name,
+        initialDescription: workspace.description,
+        initialShortcut: workspace.shortcut ?? '',
+        initialIconKey: workspace.toJson()['icon'] as String? ?? 'grid_view',
+        initialColorHex: workspace.accentColorHex,
+        initialApps: apps,
+        initialShellCommand: shell,
+      ),
+    );
+
+    if (!mounted || result == null) return;
+
+    if (result == 'delete') {
+      try {
+        await _api.deleteWorkspace(workspace.id);
+        await _loadWorkspaces();
+        _showInfo('Workspace deleted.');
+      } catch (error) {
+        _showError(error.toString().replaceFirst('Exception: ', ''));
+      }
+      return;
+    }
+
+    if (result is! WorkspaceFormData) return;
+
+    try {
+      await _api.updateWorkspace(workspace.id, result.toPayload());
+      await _loadWorkspaces();
+      _showInfo('Workspace updated.');
+    } catch (error) {
+      _showError(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _showAllProcessesDialog() async {
+    List<ProcessInfo> items = _processes;
+    try {
+      items = await _api.getAllProcesses();
+    } catch (_) {}
+    if (!mounted) return;
+
+    await showDialog<void>(
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
@@ -311,7 +360,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 Expanded(
-                  child: _processes.isEmpty
+                  child: items.isEmpty
                       ? Center(
                           child: Text(
                             'No active processes',
@@ -322,11 +371,11 @@ class _DashboardPageState extends State<DashboardPage> {
                           ),
                         )
                       : ListView.separated(
-                          itemCount: _processes.length,
+                          itemCount: items.length,
                           separatorBuilder: (_, _) =>
                               const SizedBox(height: AppSpacing.md),
                           itemBuilder: (context, index) {
-                            final process = _processes[index];
+                            final process = items[index];
                             return Row(
                               children: [
                                 const Icon(
@@ -648,6 +697,19 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildActionsGrid({required int crossAxisCount}) {
+    if (_dockActions.isEmpty) {
+      return Center(
+        child: Text(
+          _backendConnected
+              ? 'No actions available'
+              : 'Connect to backend to load actions',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppColors.textMuted,
+              ),
+        ),
+      );
+    }
+
     return GridView.builder(
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
@@ -663,9 +725,9 @@ class _DashboardPageState extends State<DashboardPage> {
           icon: action.icon,
           status: action.status,
           accentColor: action.accentColor,
-          isLoading: _loadingActionIndex == i,
+          isLoading: _loadingActionId == action.id,
           isActive: _isAppActive(action.appName),
-          onTap: () => _handleDockAction(action, i),
+          onTap: () => _handleDockAction(action),
         );
       },
     );
@@ -690,22 +752,23 @@ class _DashboardPageState extends State<DashboardPage> {
         Expanded(
           child: Padding(
             padding: const EdgeInsets.only(right: AppSpacing.md),
-            child: WorkspaceCard(
-              title: ws.name,
-              description: ws.description,
-              icon: ws.icon,
-              accentColor: ws.accentColor,
-              isLoading: _loadingWorkspaceId == ws.id,
-              onLaunch: () => _handleWorkspaceLaunch(ws),
+            child: GestureDetector(
+              onLongPress: () => _openEditWorkspace(ws),
+              child: WorkspaceCard(
+                title: ws.name,
+                description: ws.description,
+                icon: ws.icon,
+                accentColor: ws.accentColor,
+                isLoading: _loadingWorkspaceId == ws.id,
+                onLaunch: () => _handleWorkspaceLaunch(ws),
+              ),
             ),
           ),
         ),
       if (includeNewCard)
         Expanded(
           child: NewWorkspaceCard(
-            onTap: () => _showInfo(
-              'Custom workspaces are coming soon. Edit workspaces.js on the backend for now.',
-            ),
+            onTap: _openCreateWorkspace,
           ),
         ),
     ];

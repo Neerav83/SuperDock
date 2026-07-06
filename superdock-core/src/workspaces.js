@@ -1,71 +1,29 @@
-const config = require("./config");
+const store = require("./store");
+const { DEFAULT_WORKSPACES } = require("./dock_actions");
+const { resolveAction } = require("./dock_actions");
 
-const WORKSPACES = {
-  "flutter-dev": {
-    id: "flutter-dev",
-    name: "Flutter Dev",
-    description: "VS Code, Simulator, Flutter run",
-    shortcut: "⌘1",
-    actions: [
-      { type: "open_app", name: "Visual Studio Code" },
-      { type: "open_app", name: "Simulator" },
-      { type: "shell", cmd: "flutter run", useFlutterProject: true },
-    ],
-  },
-  "ai-mode": {
-    id: "ai-mode",
-    name: "AI Mode",
-    description: "Cursor, Claude, Terminal",
-    shortcut: "⌘2",
-    actions: [
-      { type: "open_app", name: "Cursor" },
-      { type: "open_app", name: "Claude" },
-      { type: "open_app", name: "Terminal" },
-    ],
-  },
-  "server-mode": {
-    id: "server-mode",
-    name: "Server Mode",
-    description: "Docker, Terminal, Docker logs",
-    shortcut: "⌘3",
-    actions: [
-      { type: "open_app", name: "Docker" },
-      { type: "open_app", name: "Terminal" },
-      {
-        type: "shell",
-        cmd: "docker compose logs --tail=30 2>/dev/null || docker ps",
-      },
-    ],
-  },
-  "design-mode": {
-    id: "design-mode",
-    name: "Design Mode",
-    description: "Figma, Safari, Preview",
-    shortcut: "⌘4",
-    actions: [
-      { type: "open_app", name: "Figma" },
-      { type: "open_app", name: "Safari" },
-      { type: "open_app", name: "Preview" },
-    ],
-  },
-};
+function slugify(value) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
-function resolveAction(action) {
-  if (action.type === "shell" && action.useFlutterProject) {
-    const cwd = config.getFlutterProjectPath();
-    if (!cwd) {
-      throw new Error(
-        "Flutter project path is not configured. Set it in Settings.",
-      );
-    }
-    return { type: "shell", cmd: action.cmd, cwd };
-  }
+function getWorkspaceMap() {
+  const stored = store.getData().workspaces;
+  return stored ?? DEFAULT_WORKSPACES;
+}
 
-  return action;
+function saveWorkspaceMap(map) {
+  store.update((data) => {
+    data.workspaces = map;
+  });
 }
 
 function getWorkspaceDefinition(id) {
-  return WORKSPACES[id] || null;
+  const map = getWorkspaceMap();
+  return map[id] || null;
 }
 
 function getWorkspace(id) {
@@ -79,19 +37,85 @@ function getWorkspace(id) {
 }
 
 function listWorkspaces() {
-  return Object.values(WORKSPACES).map(
-    ({ id, name, description, shortcut }) => ({
+  return Object.values(getWorkspaceMap()).map(
+    ({ id, name, description, shortcut, icon, accentColor, actions }) => ({
       id,
       name,
       description,
       shortcut,
+      icon,
+      accentColor,
+      actions,
     }),
   );
+}
+
+function createWorkspace(payload) {
+  const map = { ...getWorkspaceMap() };
+  const id = payload.id?.trim() || slugify(payload.name || "workspace");
+
+  if (!payload.name?.trim()) {
+    throw new Error("Workspace name is required");
+  }
+  if (map[id]) {
+    throw new Error(`Workspace "${id}" already exists`);
+  }
+
+  map[id] = {
+    id,
+    name: payload.name.trim(),
+    description: payload.description?.trim() || "",
+    shortcut: payload.shortcut?.trim() || null,
+    icon: payload.icon || "grid_view",
+    accentColor: payload.accentColor || "#3B82F6",
+    actions: Array.isArray(payload.actions) ? payload.actions : [],
+  };
+
+  saveWorkspaceMap(map);
+  return map[id];
+}
+
+function updateWorkspace(id, payload) {
+  const map = { ...getWorkspaceMap() };
+  const existing = map[id];
+  if (!existing) {
+    throw new Error(`Unknown workspace: ${id}`);
+  }
+
+  map[id] = {
+    ...existing,
+    name: payload.name?.trim() || existing.name,
+    description:
+      payload.description !== undefined
+        ? payload.description.trim()
+        : existing.description,
+    shortcut:
+      payload.shortcut !== undefined ? payload.shortcut?.trim() || null : existing.shortcut,
+    icon: payload.icon || existing.icon,
+    accentColor: payload.accentColor || existing.accentColor,
+    actions: Array.isArray(payload.actions) ? payload.actions : existing.actions,
+  };
+
+  saveWorkspaceMap(map);
+  return map[id];
+}
+
+function deleteWorkspace(id) {
+  const map = { ...getWorkspaceMap() };
+  if (!map[id]) {
+    throw new Error(`Unknown workspace: ${id}`);
+  }
+  delete map[id];
+  saveWorkspaceMap(map);
+  return { ok: true };
 }
 
 module.exports = {
   getWorkspace,
   getWorkspaceDefinition,
   listWorkspaces,
+  createWorkspace,
+  updateWorkspace,
+  deleteWorkspace,
   resolveAction,
 };
