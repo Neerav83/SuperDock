@@ -8,6 +8,7 @@ class DockAction {
     required this.accentColor,
     this.appName,
     this.shellCommand,
+    this.usesFlutterProject = false,
   });
 
   final String title;
@@ -16,4 +17,5 @@ class DockAction {
   final Color accentColor;
   final String? appName;
   final String? shellCommand;
+  final bool usesFlutterProject;
 }
