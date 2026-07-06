@@ -4,10 +4,12 @@ const terminal = require("./src/terminal");
 const system = require("./src/system");
 const processes = require("./src/processes");
 const workspaces = require("./src/workspaces");
+const config = require("./src/config");
 const { runAction } = require("./src/actions");
 
 const app = express();
-const PORT = 4545;
+const PORT = process.env.PORT || 4545;
+const HOST = process.env.HOST || "127.0.0.1";
 
 app.use(express.json());
 
@@ -46,6 +48,18 @@ app.get("/workspaces", (_req, res) => {
   res.json(workspaces.listWorkspaces());
 });
 
+app.get("/config", (_req, res) => {
+  res.json(config.getConfig());
+});
+
+app.put("/config", (req, res) => {
+  try {
+    res.json(config.setConfig(req.body || {}));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.post("/run", async (req, res) => {
   const { action, payload } = req.body;
 
@@ -61,6 +75,6 @@ app.post("/run", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`SuperDock Core running on :${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`SuperDock Core running on http://${HOST}:${PORT}`);
 });

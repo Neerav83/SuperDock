@@ -77,6 +77,8 @@ Appen pollar backenden var 3:e sekund. Om backenden inte är igång visas "Offli
 | `GET` | `/history` | Senaste actions (`?limit=10`) |
 | `GET` | `/terminal` | Terminaloutput (live vid shell-kommandon) |
 | `GET` | `/workspaces` | Tillgängliga workspaces |
+| `GET` | `/config` | Backend-konfiguration (t.ex. Flutter-projektsökväg) |
+| `PUT` | `/config` | Uppdatera backend-konfiguration |
 | `POST` | `/run` | Kör en action |
 
 ### Actions (`POST /run`)
@@ -108,4 +110,6 @@ Tillgängliga workspace-id:n: `flutter-dev`, `ai-mode`, `server-mode`, `design-m
 
 Backenden är byggd för macOS och använder `open`, `pgrep`, `top`, `vm_stat` och `docker` för systemintegration.
 
-Flutter-appen kommunicerar med backenden via `SuperDockApi` i `superdock_ui/lib/core/services/api.dart`. API-URL:en är `http://localhost:4545` som standard.
+Flutter-appen kommunicerar med backenden via `SuperDockApi` i `superdock_ui/lib/core/services/api.dart`. API-URL:en är `http://127.0.0.1:4545` som standard och kan ändras under **Settings** i appen.
+
+Flutter-projektsökvägen konfigureras i Settings och synkas till backenden. Den krävs för **Flutter Run** och **Flutter Dev**-workspacet.

@@ -87,14 +87,15 @@ async function runShell(cmd, cwd) {
 }
 
 async function launchWorkspace(id) {
-  const workspace = workspaces.getWorkspace(id);
-  if (!workspace) {
+  const definition = workspaces.getWorkspaceDefinition(id);
+  if (!definition) {
     throw new Error(`Unknown workspace: ${id}`);
   }
 
-  terminal.append(`> Launching workspace: ${workspace.name}`);
+  terminal.append(`> Launching workspace: ${definition.name}`);
 
-  for (const action of workspace.actions) {
+  for (const rawAction of definition.actions) {
+    const action = workspaces.resolveAction(rawAction);
     if (action.type === "open_app") {
       await openApp(action.name);
     } else if (action.type === "shell") {
@@ -102,8 +103,8 @@ async function launchWorkspace(id) {
     }
   }
 
-  history.addEntry(`Launched ${workspace.name}`);
-  return { ok: true, workspace: workspace.name };
+  history.addEntry(`Launched ${definition.name}`);
+  return { ok: true, workspace: definition.name };
 }
 
 async function runAction(action, payload = {}) {
