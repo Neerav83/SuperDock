@@ -3,6 +3,7 @@ const { promisify } = require("util");
 const history = require("./history");
 const terminal = require("./terminal");
 const workspaces = require("./workspaces");
+const { getProcessName } = require("./processes");
 
 const execAsync = promisify(exec);
 
@@ -10,10 +11,46 @@ function shellEscape(value) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+function appleScriptEscape(value) {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+async function activateApp(name) {
+  const processName = getProcessName(name);
+  const appLiteral = appleScriptEscape(name);
+  const processLiteral = appleScriptEscape(processName);
+
+  const script = [
+    `tell application "${appLiteral}" to activate`,
+    'tell application "System Events"',
+    `  if exists process "${processLiteral}" then`,
+    `    tell process "${processLiteral}"`,
+    "      set frontmost to true",
+    "      repeat with w in windows",
+    '        try',
+    '          if value of attribute "AXMinimized" of w is true then',
+    '            set value of attribute "AXMinimized" of w to false',
+    "          end if",
+    "        end try",
+    "      end repeat",
+    "    end tell",
+    "  end if",
+    "end tell",
+  ].join("\n");
+
+  await execAsync(`osascript -e ${shellEscape(script)}`);
+}
+
 async function openApp(name) {
-  await execAsync(`open -a ${shellEscape(name)}`);
-  history.addEntry(`Opened ${name}`);
-  terminal.append(`> open -a "${name}"`);
+  try {
+    await activateApp(name);
+    history.addEntry(`Activated ${name}`);
+    terminal.append(`> activate "${name}"`);
+  } catch {
+    await execAsync(`open -a ${shellEscape(name)}`);
+    history.addEntry(`Opened ${name}`);
+    terminal.append(`> open -a "${name}"`);
+  }
 }
 
 async function runShell(cmd, cwd) {

@@ -13,6 +13,7 @@ class WorkspaceCard extends StatelessWidget {
     required this.icon,
     required this.accentColor,
     this.onLaunch,
+    this.isLoading = false,
   });
 
   final String title;
@@ -20,11 +21,13 @@ class WorkspaceCard extends StatelessWidget {
   final IconData icon;
   final Color accentColor;
   final VoidCallback? onLaunch;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedPress(
-      onTap: onLaunch,
+      onTap: isLoading ? null : onLaunch,
+      accentColor: accentColor,
       child: GlassCard(
         padding: const EdgeInsets.all(AppSpacing.lg),
         gradient: LinearGradient(
@@ -74,14 +77,28 @@ class WorkspaceCard extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Text(
-                'Launch',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: accentColor,
-                      fontWeight: FontWeight.w600,
+              child: isLoading
+                  ? SizedBox(
+                      height: 18,
+                      child: Center(
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: accentColor,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Text(
+                      'Launch',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: accentColor,
+                            fontWeight: FontWeight.w600,
+                          ),
                     ),
-              ),
             ),
           ],
         ),

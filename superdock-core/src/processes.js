@@ -3,12 +3,27 @@ const { promisify } = require("util");
 
 const execFileAsync = promisify(execFile);
 
+const APP_PROCESS_NAMES = {
+  "Visual Studio Code": "Code",
+  Docker: "Docker",
+  Cursor: "Cursor",
+  Terminal: "Terminal",
+  Figma: "Figma",
+  Simulator: "Simulator",
+  Xcode: "Xcode",
+  Safari: "Safari",
+};
+
 const TRACKED_APPS = [
   { name: "Docker", processName: "Docker", detailFn: getDockerDetail },
   { name: "Cursor", processName: "Cursor", detailFn: () => "Active" },
   { name: "Visual Studio Code", processName: "Code", detailFn: () => "Active" },
   { name: "Terminal", processName: "Terminal", detailFn: getTerminalDetail },
 ];
+
+function getProcessName(appName) {
+  return APP_PROCESS_NAMES[appName] ?? appName;
+}
 
 async function isRunning(processName) {
   try {
@@ -55,4 +70,4 @@ async function getProcesses() {
   return results.filter((p) => p.active);
 }
 
-module.exports = { getProcesses };
+module.exports = { getProcesses, isRunning, getProcessName };
