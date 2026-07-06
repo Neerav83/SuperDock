@@ -36,6 +36,8 @@ class _DashboardPageState extends State<DashboardPage> {
   List<ActionHistoryEntry> _history = [];
   TerminalOutput? _terminal;
   bool _backendConnected = false;
+  int? _loadingActionIndex;
+  String? _loadingWorkspaceId;
 
   static const _dockActions = [
     DockAction(
@@ -183,18 +185,41 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
-  void _handleDockAction(DockAction action) {
-    if (action.appName != null) {
-      _api.openApp(action.appName!);
-    } else if (action.shellCommand != null) {
-      _api.runShell(action.shellCommand!);
+  Future<void> _handleDockAction(DockAction action, int index) async {
+    if (_loadingActionIndex != null) return;
+
+    setState(() => _loadingActionIndex = index);
+    try {
+      if (action.appName != null) {
+        await _api.openApp(action.appName!);
+      } else if (action.shellCommand != null) {
+        await _api.runShell(action.shellCommand!);
+      }
+    } catch (_) {
+      // Refresh will show failure in history/terminal.
+    } finally {
+      if (mounted) setState(() => _loadingActionIndex = null);
+      _refresh();
     }
-    Future.delayed(const Duration(milliseconds: 500), _refresh);
   }
 
-  void _handleWorkspaceLaunch(Workspace workspace) {
-    _api.launchWorkspace(workspace.id);
-    Future.delayed(const Duration(milliseconds: 500), _refresh);
+  Future<void> _handleWorkspaceLaunch(Workspace workspace) async {
+    if (_loadingWorkspaceId != null) return;
+
+    setState(() => _loadingWorkspaceId = workspace.id);
+    try {
+      await _api.launchWorkspace(workspace.id);
+    } catch (_) {
+      // Refresh will show failure in history/terminal.
+    } finally {
+      if (mounted) setState(() => _loadingWorkspaceId = null);
+      _refresh();
+    }
+  }
+
+  bool _isAppActive(String? appName) {
+    if (appName == null) return false;
+    return _processes.any((process) => process.name == appName);
   }
 
   @override
@@ -394,7 +419,9 @@ class _DashboardPageState extends State<DashboardPage> {
                       icon: action.icon,
                       status: action.status,
                       accentColor: action.accentColor,
-                      onTap: () => _handleDockAction(action),
+                      isLoading: _loadingActionIndex == i,
+                      isActive: _isAppActive(action.appName),
+                      onTap: () => _handleDockAction(action, i),
                     );
                   },
                 ),
@@ -421,6 +448,7 @@ class _DashboardPageState extends State<DashboardPage> {
                             description: ws.description,
                             icon: ws.icon,
                             accentColor: ws.accentColor,
+                            isLoading: _loadingWorkspaceId == ws.id,
                             onLaunch: () => _handleWorkspaceLaunch(ws),
                           ),
                         ),

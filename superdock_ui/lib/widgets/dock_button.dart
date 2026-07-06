@@ -13,6 +13,8 @@ class DockButton extends StatelessWidget {
     required this.status,
     required this.accentColor,
     this.onTap,
+    this.isLoading = false,
+    this.isActive = false,
   });
 
   final String title;
@@ -20,33 +22,63 @@ class DockButton extends StatelessWidget {
   final String status;
   final Color accentColor;
   final VoidCallback? onTap;
+  final bool isLoading;
+  final bool isActive;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedPress(
-      onTap: onTap,
+      onTap: isLoading ? null : onTap,
+      accentColor: accentColor,
       child: GlassCard(
         padding: const EdgeInsets.symmetric(
           vertical: AppSpacing.lg,
           horizontal: AppSpacing.md,
         ),
+        borderColor: isActive
+            ? accentColor.withValues(alpha: 0.6)
+            : AppColors.cardBorder,
+        gradient: isActive
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  accentColor.withValues(alpha: 0.12),
+                  AppColors.cardBackground.withValues(alpha: 0.05),
+                ],
+              )
+            : null,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: accentColor.withValues(alpha: 0.35),
-                    blurRadius: 20,
-                    spreadRadius: 2,
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: accentColor.withValues(alpha: isActive ? 0.5 : 0.35),
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: Icon(icon, color: accentColor, size: 28),
+                  child: Icon(icon, color: accentColor, size: 28),
+                ),
+                if (isLoading)
+                  SizedBox(
+                    width: 52,
+                    height: 52,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: accentColor.withValues(alpha: 0.8),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: AppSpacing.md),
             Text(
@@ -59,9 +91,14 @@ class DockButton extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              status,
+              isLoading ? 'Kör...' : (isActive ? 'Aktiv' : status),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: AppColors.textMuted,
+                    color: isLoading || isActive
+                        ? accentColor
+                        : AppColors.textMuted,
+                    fontWeight: isLoading || isActive
+                        ? FontWeight.w600
+                        : FontWeight.w400,
                   ),
               textAlign: TextAlign.center,
             ),
