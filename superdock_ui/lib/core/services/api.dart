@@ -6,16 +6,30 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/action_history.dart';
 import '../models/connection_status.dart';
 import '../models/dock_action.dart';
+import '../models/flutter_device.dart';
 import '../models/process_info.dart';
 import '../models/system_stats.dart';
 import '../models/terminal_output.dart';
 import '../models/workspace.dart';
+
+class MultipleFlutterDevicesException implements Exception {
+  MultipleFlutterDevicesException(this.devices, [this.message]);
+
+  final List<FlutterDevice> devices;
+  final String? message;
+
+  @override
+  String toString() =>
+      message ?? 'More than one device is connected. Please specify a device.';
+}
 
 class SuperDockApi {
   SuperDockApi({this.baseUrl = 'http://127.0.0.1:4545'});
 
   final String baseUrl;
   static const _timeout = Duration(seconds: 5);
+  static const _actionTimeout = Duration(seconds: 30);
+  static const _flutterTimeout = Duration(seconds: 60);
 
   Uri get _uri => Uri.parse(baseUrl);
 
@@ -58,11 +72,40 @@ class SuperDockApi {
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({'action': action, 'payload': payload}),
         )
-        .timeout(_timeout);
+        .timeout(_actionTimeout);
+
+    if (response.statusCode == 409) {
+      throw _readActionError(response.body);
+    }
 
     if (response.statusCode != 200) {
       throw Exception(_readErrorMessage(response.body));
     }
+  }
+
+  Exception _readActionError(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map &&
+          decoded['code'] == 'MULTIPLE_FLUTTER_DEVICES' &&
+          decoded['devices'] is List) {
+        final devices = (decoded['devices'] as List)
+            .map(
+              (device) => FlutterDevice.fromJson(
+                Map<String, dynamic>.from(device as Map),
+              ),
+            )
+            .toList();
+        return MultipleFlutterDevicesException(
+          devices,
+          decoded['error']?.toString(),
+        );
+      }
+      if (decoded is Map && decoded['error'] != null) {
+        return Exception(decoded['error'].toString());
+      }
+    } catch (_) {}
+    return Exception('Action failed');
   }
 
   String _readErrorMessage(String body) {
@@ -83,11 +126,37 @@ class SuperDockApi {
     return runAction('shell', payload);
   }
 
-  Future<void> launchWorkspace(String id) =>
-      runAction('launch_workspace', {'id': id});
+  Future<void> launchWorkspace(String id, {String? deviceId}) {
+    final payload = <String, dynamic>{'id': id};
+    if (deviceId != null) payload['deviceId'] = deviceId;
+    return runAction('launch_workspace', payload);
+  }
 
-  Future<void> runDockAction(String id) =>
-      runAction('run_dock_action', {'id': id});
+  Future<void> runDockAction(String id, {String? deviceId}) {
+    final payload = <String, dynamic>{'id': id};
+    if (deviceId != null) payload['deviceId'] = deviceId;
+    return runAction('run_dock_action', payload);
+  }
+
+  Future<FlutterDevicesResponse> getFlutterDevices() async {
+    final response = await http
+        .get(Uri.parse('$baseUrl/flutter/devices'))
+        .timeout(_flutterTimeout);
+
+    if (response.statusCode == 404) {
+      throw Exception(
+        'Backend is missing Flutter device support. Restart SuperDock.',
+      );
+    }
+
+    if (response.statusCode != 200) {
+      throw Exception(_readErrorMessage(response.body));
+    }
+
+    return FlutterDevicesResponse.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
 
   Future<ConnectionStatus> getStatus() async {
     final json = await _get('/status');
@@ -130,6 +199,55 @@ class SuperDockApi {
     return list
         .map((e) => DockAction.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<DockAction> createAction(Map<String, dynamic> payload) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/actions'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        )
+        .timeout(_timeout);
+
+    if (response.statusCode != 201) {
+      throw Exception(_readErrorMessage(response.body));
+    }
+
+    return DockAction.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<DockAction> updateAction(
+    String id,
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await http
+        .put(
+          Uri.parse('$baseUrl/actions/$id'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        )
+        .timeout(_timeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_readErrorMessage(response.body));
+    }
+
+    return DockAction.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<void> deleteAction(String id) async {
+    final response = await http
+        .delete(Uri.parse('$baseUrl/actions/$id'))
+        .timeout(_timeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_readErrorMessage(response.body));
+    }
   }
 
   Future<List<Workspace>> getWorkspaces() async {

@@ -79,12 +79,16 @@ class _SettingsDialogState extends State<SettingsDialog> {
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.transparent,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: GlassCard(
-          padding: const EdgeInsets.all(AppSpacing.xxl),
-          child: SingleChildScrollView(
-            child: Column(
+      insetPadding: const EdgeInsets.all(AppSpacing.xl),
+      child: Material(
+        color: Colors.transparent,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
+          child: GlassCard(
+            padding: const EdgeInsets.all(AppSpacing.xxl),
+            child: SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -164,6 +168,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
           ),
         ),
       ),
+    ),
     );
   }
 }

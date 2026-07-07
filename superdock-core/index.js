@@ -9,6 +9,7 @@ const processes = require("./src/processes");
 const workspaces = require("./src/workspaces");
 const dockActions = require("./src/dock_actions");
 const config = require("./src/config");
+const flutter = require("./src/flutter");
 const { runAction } = require("./src/actions");
 
 store.load();
@@ -21,6 +22,10 @@ app.use(express.json());
 
 app.get("/status", (_req, res) => {
   res.json(system.getStatus());
+});
+
+app.get("/meta", (_req, res) => {
+  res.json({ apiVersion: 3, backgroundShell: true, flutterDevices: true });
 });
 
 app.get("/system", async (_req, res) => {
@@ -63,6 +68,30 @@ app.get("/actions", (_req, res) => {
   res.json(dockActions.listActions());
 });
 
+app.post("/actions", (req, res) => {
+  try {
+    res.status(201).json(dockActions.createAction(req.body || {}));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put("/actions/:id", (req, res) => {
+  try {
+    res.json(dockActions.updateAction(req.params.id, req.body || {}));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete("/actions/:id", (req, res) => {
+  try {
+    res.json(dockActions.deleteAction(req.params.id));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.get("/workspaces", (_req, res) => {
   res.json(workspaces.listWorkspaces());
 });
@@ -95,6 +124,19 @@ app.get("/config", (_req, res) => {
   res.json(config.getConfig());
 });
 
+app.get("/flutter/devices", async (_req, res) => {
+  try {
+    const cwd = dockActions.requireFlutterProjectPath();
+    const devices = await flutter.listDevices(cwd);
+    res.json({
+      devices: devices.map(flutter.normalizeDevice),
+      preferredDeviceId: config.getFlutterDeviceId(),
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.put("/config", (req, res) => {
   try {
     res.json(config.setConfig(req.body || {}));
@@ -114,6 +156,13 @@ app.post("/run", async (req, res) => {
     const result = await runAction(action, payload || {});
     res.json(result);
   } catch (err) {
+    if (err.code === "MULTIPLE_FLUTTER_DEVICES") {
+      return res.status(409).json({
+        error: err.message,
+        code: err.code,
+        devices: err.devices,
+      });
+    }
     res.status(500).json({ error: err.message });
   }
 });

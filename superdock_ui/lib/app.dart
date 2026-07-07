@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'core/theme/scroll_behavior.dart';
 import 'core/theme/theme.dart';
 import 'pages/dashboard_page.dart';
 
@@ -11,6 +12,7 @@ class SuperDockApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
+      scrollBehavior: const SuperDockScrollBehavior(),
       home: const DashboardPage(),
     );
   }

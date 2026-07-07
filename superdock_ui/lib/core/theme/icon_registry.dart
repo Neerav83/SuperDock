@@ -6,6 +6,13 @@ IconData iconForKey(String key) {
   return _icons[key] ?? Icons.apps;
 }
 
+String iconKeyForData(IconData icon) {
+  for (final entry in _icons.entries) {
+    if (entry.value == icon) return entry.key;
+  }
+  return 'extension';
+}
+
 Color colorFromHex(String? hex) {
   if (hex == null || hex.isEmpty) return AppColors.blue;
   final value = hex.replaceFirst('#', '').toUpperCase();
@@ -41,6 +48,11 @@ const _icons = <String, IconData>{
   'brush': Icons.brush,
   'folder': Icons.folder,
   'rocket_launch': Icons.rocket_launch,
+  'extension': Icons.extension,
+  'science': Icons.science,
+  'build': Icons.build,
+  'cloud': Icons.cloud,
+  'star': Icons.star,
 };
 
 const iconOptions = <String, String>{
@@ -55,6 +67,11 @@ const iconOptions = <String, String>{
   'brush': 'Creative',
   'grid_view': 'Grid',
   'rocket_launch': 'Launch',
+  'extension': 'Extension',
+  'science': 'Science',
+  'build': 'Build',
+  'cloud': 'Cloud',
+  'star': 'Star',
 };
 
 const colorOptions = <String, String>{

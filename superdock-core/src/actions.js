@@ -4,9 +4,13 @@ const history = require("./history");
 const terminal = require("./terminal");
 const workspaces = require("./workspaces");
 const dockActions = require("./dock_actions");
+const config = require("./config");
+const flutter = require("./flutter");
 const { getProcessName } = require("./processes");
 
 const execAsync = promisify(exec);
+
+let activeShellProcesses = 0;
 
 function shellEscape(value) {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -54,9 +58,89 @@ async function openApp(name) {
   }
 }
 
-async function runShell(cmd, cwd) {
+function attachShellChild(child, cmd) {
+  activeShellProcesses++;
   terminal.setLive(true);
-  terminal.append(`> ${cmd}`);
+
+  child.stdout.on("data", (data) => terminal.appendChunk(data));
+  child.stderr.on("data", (data) => terminal.appendChunk(data));
+
+  const onFinished = (success) => {
+    activeShellProcesses = Math.max(0, activeShellProcesses - 1);
+    if (activeShellProcesses === 0) {
+      terminal.setLive(false);
+    }
+    history.addEntry(success ? `Ran: ${cmd}` : `Failed: ${cmd}`, success);
+  };
+
+  child.on("close", (code) => onFinished(code === 0));
+  child.on("error", () => onFinished(false));
+}
+
+function createMultipleDevicesError(devices) {
+  const names = devices.map((device) => device.name).join(", ");
+  const err = new Error(
+    `More than one device is connected (${names}). Please specify a device.`,
+  );
+  err.code = "MULTIPLE_FLUTTER_DEVICES";
+  err.devices = devices.map(flutter.normalizeDevice);
+  return err;
+}
+
+async function resolveShellAction(action, options = {}) {
+  if (action.type !== "shell" || !flutter.isFlutterRunCommand(action.cmd)) {
+    return action;
+  }
+
+  if (options.deviceId) {
+    return {
+      ...action,
+      cmd: flutter.buildFlutterRunCommand(action.cmd, options.deviceId),
+    };
+  }
+
+  const devices = await flutter.listDevices(action.cwd);
+  if (devices.length === 0) {
+    throw new Error(
+      "No Flutter devices found. Connect a device or start a simulator.",
+    );
+  }
+
+  let deviceId = options.deviceId || config.getFlutterDeviceId();
+  if (deviceId && !devices.some((device) => device.id === deviceId)) {
+    deviceId = null;
+  }
+
+  if (!deviceId) {
+    if (devices.length === 1) {
+      deviceId = devices[0].id;
+    } else {
+      throw createMultipleDevicesError(devices);
+    }
+  }
+
+  return {
+    ...action,
+    cmd: flutter.buildFlutterRunCommand(action.cmd, deviceId),
+  };
+}
+
+async function runShell(cmd, cwd, options = {}) {
+  const background = options.background !== false;
+  terminal.append(cwd ? `> cd ${cwd} && ${cmd}` : `> ${cmd}`);
+
+  if (background) {
+    return new Promise((resolve) => {
+      const child = spawn("sh", ["-c", cmd], {
+        cwd: cwd || process.env.HOME,
+        env: process.env,
+      });
+
+      attachShellChild(child, cmd);
+      history.addEntry(`Started: ${cmd}`, true);
+      resolve({ ok: true, background: true });
+    });
+  }
 
   return new Promise((resolve, reject) => {
     const child = spawn("sh", ["-c", cmd], {
@@ -84,10 +168,12 @@ async function runShell(cmd, cwd) {
       history.addEntry(`Failed: ${cmd}`, false);
       reject(err);
     });
+
+    terminal.setLive(true);
   });
 }
 
-async function launchWorkspace(id) {
+async function launchWorkspace(id, options = {}) {
   const definition = workspaces.getWorkspaceDefinition(id);
   if (!definition) {
     throw new Error(`Unknown workspace: ${id}`);
@@ -100,7 +186,8 @@ async function launchWorkspace(id) {
     if (action.type === "open_app") {
       await openApp(action.name);
     } else if (action.type === "shell") {
-      await runShell(action.cmd, action.cwd);
+      const resolved = await resolveShellAction(action, options);
+      await runShell(resolved.cmd, resolved.cwd);
     }
   }
 
@@ -108,7 +195,7 @@ async function launchWorkspace(id) {
   return { ok: true, workspace: definition.name };
 }
 
-async function runDockAction(id) {
+async function runDockAction(id, options = {}) {
   const action = dockActions.getActionById(id);
   if (!action) {
     throw new Error(`Unknown action: ${id}`);
@@ -120,7 +207,10 @@ async function runDockAction(id) {
   }
 
   if (action.type === "shell") {
-    const resolved = dockActions.resolveAction(action);
+    const resolved = await resolveShellAction(
+      dockActions.resolveAction(action),
+      options,
+    );
     await runShell(resolved.cmd, resolved.cwd);
     return { ok: true };
   }
@@ -135,14 +225,16 @@ async function runAction(action, payload = {}) {
       return { ok: true };
 
     case "shell":
-      await runShell(payload.cmd, payload.cwd);
+      await runShell(payload.cmd, payload.cwd, {
+        background: payload.background !== false,
+      });
       return { ok: true };
 
     case "launch_workspace":
-      return launchWorkspace(payload.id);
+      return launchWorkspace(payload.id, { deviceId: payload.deviceId });
 
     case "run_dock_action":
-      return runDockAction(payload.id);
+      return runDockAction(payload.id, { deviceId: payload.deviceId });
 
     default:
       throw new Error(`Unknown action: ${action}`);

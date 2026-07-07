@@ -16,6 +16,11 @@ function setConfig(updates) {
       data.config.gitProjectPath =
         typeof value === "string" && value.trim() ? value.trim() : null;
     }
+    if ("flutterDeviceId" in updates) {
+      const value = updates.flutterDeviceId;
+      data.config.flutterDeviceId =
+        typeof value === "string" && value.trim() ? value.trim() : null;
+    }
   });
   return getConfig();
 }
@@ -28,9 +33,14 @@ function getGitProjectPath() {
   return store.getData().config.gitProjectPath;
 }
 
+function getFlutterDeviceId() {
+  return store.getData().config.flutterDeviceId;
+}
+
 module.exports = {
   getConfig,
   setConfig,
   getFlutterProjectPath,
   getGitProjectPath,
+  getFlutterDeviceId,
 };
