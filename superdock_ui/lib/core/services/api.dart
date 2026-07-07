@@ -132,6 +132,55 @@ class SuperDockApi {
         .toList();
   }
 
+  Future<DockAction> createAction(Map<String, dynamic> payload) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/actions'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        )
+        .timeout(_timeout);
+
+    if (response.statusCode != 201) {
+      throw Exception(_readErrorMessage(response.body));
+    }
+
+    return DockAction.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<DockAction> updateAction(
+    String id,
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await http
+        .put(
+          Uri.parse('$baseUrl/actions/$id'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        )
+        .timeout(_timeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_readErrorMessage(response.body));
+    }
+
+    return DockAction.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<void> deleteAction(String id) async {
+    final response = await http
+        .delete(Uri.parse('$baseUrl/actions/$id'))
+        .timeout(_timeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_readErrorMessage(response.body));
+    }
+  }
+
   Future<List<Workspace>> getWorkspaces() async {
     final list = await _getList('/workspaces');
     return list

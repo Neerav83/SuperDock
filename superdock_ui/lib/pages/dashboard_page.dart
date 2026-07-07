@@ -16,6 +16,7 @@ import '../core/services/settings_service.dart';
 import '../core/services/terminal_stream_service.dart';
 import '../core/theme/colors.dart';
 import '../core/theme/spacing.dart';
+import '../widgets/action_dialog.dart';
 import '../widgets/dock_button.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/section_title.dart';
@@ -334,6 +335,95 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  Future<void> _openCreateAction() async {
+    final result = await showDialog<Object?>(
+      context: context,
+      builder: (context) => const ActionDialog(),
+    );
+
+    if (result is! ActionFormData || !mounted) return;
+
+    try {
+      await _api.createAction(result.toPayload());
+      await _loadActions();
+      _showInfo('Action created.');
+    } catch (error) {
+      _showError(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _openEditAction(DockAction action) async {
+    final isDefault = _isDefaultAction(action.id);
+    final json = action.toJson();
+    final type = json['type'] as String? ?? 'open_app';
+
+    final result = await showDialog<Object?>(
+      context: context,
+      builder: (context) => ActionDialog(
+        isEdit: true,
+        isDefaultAction: isDefault,
+        actionId: action.id,
+        initialTitle: action.title,
+        initialStatus: action.status,
+        initialIconKey: json['icon'] as String? ?? 'extension',
+        initialColorHex: json['accentColor'] as String? ?? '#3B82F6',
+        initialType: type,
+        initialAppName: action.appName ?? '',
+        initialCmd: action.shellCommand ?? '',
+        initialUsesFlutterProject: action.usesFlutterProject,
+        initialUsesGitProject: action.usesGitProject,
+      ),
+    );
+
+    if (!mounted || result == null) return;
+
+    if (result == 'delete') {
+      if (isDefault) {
+        _showError('Cannot delete default actions.');
+        return;
+      }
+      try {
+        await _api.deleteAction(action.id);
+        await _loadActions();
+        _showInfo('Action deleted.');
+      } catch (error) {
+        _showError(error.toString().replaceFirst('Exception: ', ''));
+      }
+      return;
+    }
+
+    if (result is! ActionFormData) return;
+
+    if (isDefault) {
+      _showError('Cannot modify default actions.');
+      return;
+    }
+
+    try {
+      await _api.updateAction(action.id, result.toPayload());
+      await _loadActions();
+      _showInfo('Action updated.');
+    } catch (error) {
+      _showError(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  bool _isDefaultAction(String id) {
+    const defaultIds = [
+      'vscode',
+      'cursor',
+      'docker',
+      'figma',
+      'terminal',
+      'flutter-run',
+      'git-pull',
+      'simulator',
+      'xcode',
+      'safari'
+    ];
+    return defaultIds.contains(id);
+  }
+
   Future<void> _showAllProcessesDialog() async {
     List<ProcessInfo> items = _processes;
     try {
@@ -440,6 +530,10 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final showSidebar = width >= 1200;
+    final isCompact = width < 800;
+
     return CallbackShortcuts(
       bindings: _shortcutBindings,
       child: Focus(
@@ -455,20 +549,22 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.all(AppSpacing.xxl),
+                padding: EdgeInsets.all(isCompact ? AppSpacing.lg : AppSpacing.xxl),
                 child: Column(
                   children: [
                     _buildTopNav(context),
                     const SizedBox(height: AppSpacing.xxl),
                     Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(child: _buildMainContent(context)),
-                          const SizedBox(width: AppSpacing.xxl),
-                          SizedBox(width: 280, child: _buildSidebar(context)),
-                        ],
-                      ),
+                      child: showSidebar
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: _buildMainContent(context)),
+                                const SizedBox(width: AppSpacing.xxl),
+                                SizedBox(width: 280, child: _buildSidebar(context)),
+                              ],
+                            )
+                          : _buildMainContent(context),
                     ),
                   ],
                 ),
@@ -481,6 +577,45 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildTopNav(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final isCompact = width < 800;
+
+    if (isCompact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ShaderMask(
+                      shaderCallback: (bounds) => const LinearGradient(
+                        colors: [AppColors.purple, AppColors.blue],
+                      ).createShader(bounds),
+                      child: Text(
+                        'SuperDock',
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _buildConnectionStatus(context),
+              const SizedBox(width: AppSpacing.sm),
+              _buildSettingsButton(context),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _buildNavPill(context),
+        ],
+      );
+    }
+
     return Row(
       children: [
         Column(
@@ -631,6 +766,11 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildDashboardView(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final showSidebar = width >= 1200;
+    final isCompact = width < 800;
+    final actionColumns = isCompact ? 3 : (width < 1000 ? 4 : 5);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -640,7 +780,7 @@ class _DashboardPageState extends State<DashboardPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SectionTitle(icon: Icons.bolt, title: 'Quick Actions'),
-              Expanded(child: _buildActionsGrid(crossAxisCount: 5)),
+              Expanded(child: _buildActionsGrid(crossAxisCount: actionColumns)),
             ],
           ),
         ),
@@ -658,13 +798,17 @@ class _DashboardPageState extends State<DashboardPage> {
         const SizedBox(height: AppSpacing.xxl),
         Expanded(
           flex: 3,
-          child: Row(
-            children: [
-              Expanded(flex: 2, child: _buildRecentActions(context)),
-              const SizedBox(width: AppSpacing.lg),
-              Expanded(flex: 3, child: _buildTerminal(context)),
-            ],
-          ),
+          child: isCompact
+              ? _buildTerminal(context)
+              : Row(
+                  children: [
+                    if (showSidebar) ...[
+                      Expanded(flex: 2, child: _buildRecentActions(context)),
+                      const SizedBox(width: AppSpacing.lg),
+                    ],
+                    Expanded(flex: 3, child: _buildTerminal(context)),
+                  ],
+                ),
         ),
       ],
     );
@@ -684,14 +828,29 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildActionsView(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final isCompact = width < 800;
+    final actionColumns = isCompact ? 2 : (width < 1000 ? 3 : 4);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SectionTitle(icon: Icons.bolt, title: 'Quick Actions'),
+        Row(
+          children: [
+            const SectionTitle(icon: Icons.bolt, title: 'Quick Actions'),
+            const SizedBox(width: AppSpacing.md),
+            IconButton(
+              onPressed: _openCreateAction,
+              icon: const Icon(Icons.add_circle_outline, size: 20),
+              tooltip: 'Create new action',
+            ),
+          ],
+        ),
         const SizedBox(height: AppSpacing.lg),
-        Expanded(child: _buildActionsGrid(crossAxisCount: 4)),
+        Expanded(child: _buildActionsGrid(crossAxisCount: actionColumns)),
         const SizedBox(height: AppSpacing.xxl),
-        Expanded(child: _buildRecentActions(context)),
+        if (!isCompact || width >= 1200)
+          Expanded(child: _buildRecentActions(context)),
       ],
     );
   }
@@ -720,14 +879,17 @@ class _DashboardPageState extends State<DashboardPage> {
       itemCount: _dockActions.length,
       itemBuilder: (context, i) {
         final action = _dockActions[i];
-        return DockButton(
-          title: action.title,
-          icon: action.icon,
-          status: action.status,
-          accentColor: action.accentColor,
-          isLoading: _loadingActionId == action.id,
-          isActive: _isAppActive(action.appName),
-          onTap: () => _handleDockAction(action),
+        return GestureDetector(
+          onLongPress: () => _openEditAction(action),
+          child: DockButton(
+            title: action.title,
+            icon: action.icon,
+            status: action.status,
+            accentColor: action.accentColor,
+            isLoading: _loadingActionId == action.id,
+            isActive: _isAppActive(action.appName),
+            onTap: () => _handleDockAction(action),
+          ),
         );
       },
     );

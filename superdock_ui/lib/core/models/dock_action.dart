@@ -39,4 +39,21 @@ class DockAction {
       usesGitProject: json['usesGitProject'] as bool? ?? false,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    final type = appName != null ? 'open_app' : 'shell';
+    final json = <String, dynamic>{
+      'id': id,
+      'title': title,
+      'icon': iconKeyForData(icon),
+      'status': status,
+      'accentColor': '#${accentColor.value.toRadixString(16).substring(2).toUpperCase()}',
+      'type': type,
+    };
+    if (appName != null) json['appName'] = appName;
+    if (shellCommand != null) json['cmd'] = shellCommand;
+    if (usesFlutterProject) json['usesFlutterProject'] = usesFlutterProject;
+    if (usesGitProject) json['usesGitProject'] = usesGitProject;
+    return json;
+  }
 }

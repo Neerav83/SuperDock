@@ -63,6 +63,30 @@ app.get("/actions", (_req, res) => {
   res.json(dockActions.listActions());
 });
 
+app.post("/actions", (req, res) => {
+  try {
+    res.status(201).json(dockActions.createAction(req.body || {}));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put("/actions/:id", (req, res) => {
+  try {
+    res.json(dockActions.updateAction(req.params.id, req.body || {}));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete("/actions/:id", (req, res) => {
+  try {
+    res.json(dockActions.deleteAction(req.params.id));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.get("/workspaces", (_req, res) => {
   res.json(workspaces.listWorkspaces());
 });
