@@ -1,4 +1,5 @@
 const store = require("./store");
+const config = require("./config");
 const { DEFAULT_WORKSPACES } = require("./dock_actions");
 const { resolveAction } = require("./dock_actions");
 
@@ -30,21 +31,61 @@ function getWorkspace(id) {
   const workspace = getWorkspaceDefinition(id);
   if (!workspace) return null;
 
+  const context = { projectPath: workspace.projectPath?.trim() || null };
   return {
     ...workspace,
-    actions: workspace.actions.map(resolveAction),
+    actions: workspace.actions.map((action) => resolveAction(action, context)),
+  };
+}
+
+function applyWorkspaceContext(workspace) {
+  const projectPath = workspace.projectPath?.trim();
+  if (projectPath) {
+    config.setConfig({
+      flutterProjectPath: projectPath,
+      gitProjectPath: projectPath,
+    });
+  }
+
+  store.update((data) => {
+    data.config.activeWorkspaceId = workspace.id;
+  });
+}
+
+function activateWorkspace(id) {
+  const workspace = getWorkspaceDefinition(id);
+  if (!workspace) {
+    throw new Error(`Unknown workspace: ${id}`);
+  }
+
+  applyWorkspaceContext(workspace);
+
+  return {
+    ok: true,
+    workspace,
+    config: config.getConfig(),
   };
 }
 
 function listWorkspaces() {
   return Object.values(getWorkspaceMap()).map(
-    ({ id, name, description, shortcut, icon, accentColor, actions }) => ({
+    ({
       id,
       name,
       description,
       shortcut,
       icon,
       accentColor,
+      projectPath,
+      actions,
+    }) => ({
+      id,
+      name,
+      description,
+      shortcut,
+      icon,
+      accentColor,
+      projectPath: projectPath || null,
       actions,
     }),
   );
@@ -68,6 +109,7 @@ function createWorkspace(payload) {
     shortcut: payload.shortcut?.trim() || null,
     icon: payload.icon || "grid_view",
     accentColor: payload.accentColor || "#3B82F6",
+    projectPath: payload.projectPath?.trim() || null,
     actions: Array.isArray(payload.actions) ? payload.actions : [],
   };
 
@@ -93,6 +135,10 @@ function updateWorkspace(id, payload) {
       payload.shortcut !== undefined ? payload.shortcut?.trim() || null : existing.shortcut,
     icon: payload.icon || existing.icon,
     accentColor: payload.accentColor || existing.accentColor,
+    projectPath:
+      payload.projectPath !== undefined
+        ? payload.projectPath?.trim() || null
+        : existing.projectPath,
     actions: Array.isArray(payload.actions) ? payload.actions : existing.actions,
   };
 
@@ -117,5 +163,7 @@ module.exports = {
   createWorkspace,
   updateWorkspace,
   deleteWorkspace,
+  activateWorkspace,
+  applyWorkspaceContext,
   resolveAction,
 };

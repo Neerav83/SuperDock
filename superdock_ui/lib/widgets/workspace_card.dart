@@ -12,59 +12,102 @@ class WorkspaceCard extends StatelessWidget {
     required this.description,
     required this.icon,
     required this.accentColor,
+    this.onActivate,
     this.onLaunch,
     this.isLoading = false,
+    this.isActive = false,
   });
 
   final String title;
   final String description;
   final IconData icon;
   final Color accentColor;
+  final VoidCallback? onActivate;
   final VoidCallback? onLaunch;
   final bool isLoading;
+  final bool isActive;
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedPress(
-      onTap: isLoading ? null : onLaunch,
-      accentColor: accentColor,
-      child: GlassCard(
-        padding: const EdgeInsets.all(AppSpacing.lg),
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            AppColors.cardBackground,
-            accentColor.withValues(alpha: 0.08),
-          ],
-        ),
-        borderColor: accentColor.withValues(alpha: 0.2),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: accentColor, size: 24),
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+    return GlassCard(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      gradient: LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          AppColors.cardBackground,
+          accentColor.withValues(alpha: isActive ? 0.16 : 0.08),
+        ],
+      ),
+      borderColor: isActive
+          ? accentColor.withValues(alpha: 0.75)
+          : accentColor.withValues(alpha: 0.2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: isLoading ? null : onActivate,
+              behavior: HitTestBehavior.opaque,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(icon, color: accentColor, size: 24),
+                      if (isActive) ...[
+                        const SizedBox(width: AppSpacing.sm),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.sm,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accentColor.withValues(alpha: 0.18),
+                            borderRadius:
+                                BorderRadius.circular(AppSpacing.pillRadius),
+                          ),
+                          child: Text(
+                            'Active',
+                            style:
+                                Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      color: accentColor,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Expanded(
-              child: Text(
-                description,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary,
-                      height: 1.4,
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      description,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                            height: 1.4,
+                          ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: AppSpacing.md),
-            Container(
+          ),
+          const SizedBox(height: AppSpacing.md),
+          AnimatedPress(
+            onTap: isLoading ? null : onLaunch,
+            accentColor: accentColor,
+            child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
               decoration: BoxDecoration(
@@ -100,8 +143,8 @@ class WorkspaceCard extends StatelessWidget {
                           ),
                     ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

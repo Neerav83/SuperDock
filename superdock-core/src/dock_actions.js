@@ -106,6 +106,7 @@ const DEFAULT_WORKSPACES = {
     shortcut: "⌘1",
     icon: "phone_iphone",
     accentColor: "#A855F7",
+    projectPath: null,
     actions: [
       { type: "open_app", name: "Visual Studio Code" },
       { type: "open_app", name: "Simulator" },
@@ -119,6 +120,7 @@ const DEFAULT_WORKSPACES = {
     shortcut: "⌘2",
     icon: "auto_awesome",
     accentColor: "#A855F7",
+    projectPath: null,
     actions: [
       { type: "open_app", name: "Cursor" },
       { type: "open_app", name: "Terminal" },
@@ -131,6 +133,7 @@ const DEFAULT_WORKSPACES = {
     shortcut: "⌘3",
     icon: "storage",
     accentColor: "#3B82F6",
+    projectPath: null,
     actions: [
       { type: "open_app", name: "Docker" },
       { type: "open_app", name: "Terminal" },
@@ -147,6 +150,7 @@ const DEFAULT_WORKSPACES = {
     shortcut: "⌘4",
     icon: "brush",
     accentColor: "#F97316",
+    projectPath: null,
     actions: [
       { type: "open_app", name: "Figma" },
       { type: "open_app", name: "Safari" },
@@ -354,14 +358,37 @@ function requireGitProjectPath() {
   return cwd;
 }
 
-function resolveAction(action) {
+function requireProjectPath(projectPath, kind) {
+  const cwd = projectPath?.trim();
+  if (!cwd) {
+    throw new Error("Workspace project path is not configured.");
+  }
+  if (!fs.existsSync(cwd)) {
+    throw new Error(`Workspace project path does not exist: ${cwd}`);
+  }
+  if (kind === "flutter") {
+    const pubspec = path.join(cwd, "pubspec.yaml");
+    if (!fs.existsSync(pubspec)) {
+      throw new Error(`No pubspec.yaml found in ${cwd}`);
+    }
+  }
+  return cwd;
+}
+
+function resolveAction(action, context = {}) {
+  const workspacePath = context.projectPath?.trim() || null;
+
   if (action.type === "shell" && usesFlutterProject(action)) {
-    const cwd = requireFlutterProjectPath();
+    const cwd = workspacePath
+      ? requireProjectPath(workspacePath, "flutter")
+      : requireFlutterProjectPath();
     return { type: "shell", cmd: action.cmd, cwd };
   }
 
   if (action.type === "shell" && usesGitProject(action)) {
-    const cwd = requireGitProjectPath();
+    const cwd = workspacePath
+      ? requireProjectPath(workspacePath, "git")
+      : requireGitProjectPath();
     return { type: "shell", cmd: action.cmd, cwd };
   }
 

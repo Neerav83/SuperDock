@@ -10,7 +10,9 @@ import '../core/models/flutter_device.dart';
 import '../core/models/process_info.dart';
 import '../core/models/system_stats.dart';
 import '../core/models/terminal_output.dart';
+import '../core/models/workspace_action_rules.dart';
 import '../core/models/workspace.dart';
+import '../core/models/workspace_quick_action.dart';
 import '../core/services/api.dart';
 import '../core/services/backend_launcher.dart';
 import '../core/services/settings_service.dart';
@@ -18,6 +20,7 @@ import '../core/services/terminal_stream_service.dart';
 import '../core/theme/colors.dart';
 import '../core/theme/responsive.dart';
 import '../core/theme/spacing.dart';
+import '../widgets/add_workspace_command_dialog.dart';
 import '../widgets/action_dialog.dart';
 import '../widgets/dock_button.dart';
 import '../widgets/flutter_device_dialog.dart';
@@ -57,8 +60,10 @@ class _DashboardPageState extends State<DashboardPage> {
   List<Workspace> _workspaces = [];
   List<DockAction> _dockActions = [];
   bool _backendConnected = false;
+  String? _activeWorkspaceId;
   String? _loadingActionId;
   String? _loadingWorkspaceId;
+  String? _loadingWorkspaceActionKey;
   final _terminalScrollController = ScrollController();
 
   @override
@@ -76,6 +81,7 @@ class _DashboardPageState extends State<DashboardPage> {
       _settings = settings;
       _api = SuperDockApi(baseUrl: settings.backendUrl);
       _terminalStream = TerminalStreamService(_api);
+      _activeWorkspaceId = settings.activeWorkspaceId;
     });
 
     if (settings.autoStartBackend) {
@@ -169,10 +175,39 @@ class _DashboardPageState extends State<DashboardPage> {
     try {
       final workspaces = await _api.getWorkspaces();
       if (!mounted) return;
-      setState(() => _workspaces = workspaces);
+      setState(() {
+        _workspaces = workspaces;
+        if (_activeWorkspaceId != null &&
+            !workspaces.any((workspace) => workspace.id == _activeWorkspaceId)) {
+          _activeWorkspaceId = null;
+        }
+      });
     } catch (error) {
       _showError('Could not load workspaces: $error');
     }
+  }
+
+  Workspace? get _activeWorkspace {
+    final id = _activeWorkspaceId;
+    if (id == null) return null;
+    for (final workspace in _workspaces) {
+      if (workspace.id == id) return workspace;
+    }
+    return null;
+  }
+
+  List<WorkspaceQuickAction> get _workspaceQuickActions {
+    final workspace = _activeWorkspace;
+    if (workspace == null) return const [];
+    return WorkspaceActionMapper.fromWorkspace(workspace);
+  }
+
+  bool get _showWorkspaceQuickActions => _workspaceQuickActions.isNotEmpty;
+
+  String get _quickActionsTitle {
+    final workspace = _activeWorkspace;
+    if (workspace != null) return '${workspace.name} Actions';
+    return 'Quick Actions';
   }
 
   Future<void> _refresh() async {
@@ -260,6 +295,106 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  Future<void> _syncActiveWorkspaceSettings(Workspace workspace) async {
+    final projectPath = workspace.projectPath?.trim();
+    final saved = await _settingsService.save(
+      _settings.copyWith(
+        activeWorkspaceId: workspace.id,
+        flutterProjectPath: projectPath?.isNotEmpty == true ? projectPath : null,
+        gitProjectPath: projectPath?.isNotEmpty == true ? projectPath : null,
+        clearFlutterProjectPath: projectPath == null || projectPath.isEmpty,
+        clearGitProjectPath: projectPath == null || projectPath.isEmpty,
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _settings = saved;
+      _activeWorkspaceId = workspace.id;
+    });
+  }
+
+  Future<void> _applyWorkspaceContext(Workspace workspace) async {
+    try {
+      await _api.activateWorkspace(workspace.id);
+    } catch (_) {
+      final projectPath = workspace.projectPath?.trim();
+      if (projectPath != null && projectPath.isNotEmpty) {
+        await _api.updateConfig({
+          'flutterProjectPath': projectPath,
+          'gitProjectPath': projectPath,
+        });
+      }
+    }
+    await _syncActiveWorkspaceSettings(workspace);
+  }
+
+  Future<void> _activateWorkspace(Workspace workspace) async {
+    if (_activeWorkspaceId == workspace.id) {
+      await _deactivateWorkspace();
+      return;
+    }
+
+    try {
+      await _applyWorkspaceContext(workspace);
+      _showInfo('Aktiverade ${workspace.name}');
+    } catch (error) {
+      _showError(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _deactivateWorkspace() async {
+    final saved = await _settingsService.save(
+      _settings.copyWith(clearActiveWorkspaceId: true),
+    );
+    if (!mounted) return;
+    setState(() {
+      _settings = saved;
+      _activeWorkspaceId = null;
+    });
+    _showInfo('Visar globala quick actions igen');
+  }
+
+  Future<void> _handleWorkspaceQuickAction(WorkspaceQuickAction action) async {
+    final loadingKey = '${action.workspace.id}:${action.actionIndex}';
+    if (_loadingWorkspaceActionKey != null) return;
+
+    setState(() => _loadingWorkspaceActionKey = loadingKey);
+    try {
+      await _applyWorkspaceContext(action.workspace);
+      final projectPath = action.workspace.projectPath?.trim();
+
+      if (action.appName != null) {
+        await _api.openApp(action.appName!, path: projectPath);
+        return;
+      }
+
+      final cmd = action.shellCommand?.trim() ?? '';
+      if (cmd.isEmpty) return;
+
+      final usesGit = WorkspaceActionRules.usesGitProject(action.rawAction);
+      if (action.usesFlutterProject && cmd.startsWith('flutter run')) {
+        final device = await _resolveFlutterDevice();
+        if (device == null) return;
+        _showInfo('Startar flutter run på ${device.name}…');
+        await _api.runShell(
+          'flutter run -d ${device.id}',
+          cwd: projectPath,
+        );
+        return;
+      }
+
+      await _api.runShell(
+        cmd,
+        cwd: usesGit || action.usesFlutterProject ? projectPath : null,
+      );
+    } catch (error) {
+      _showError(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _loadingWorkspaceActionKey = null);
+      _refresh();
+    }
+  }
+
   Future<void> _handleWorkspaceLaunch(Workspace workspace) async {
     if (_loadingWorkspaceId != null) return;
 
@@ -275,11 +410,13 @@ class _DashboardPageState extends State<DashboardPage> {
       }
 
       await _api.launchWorkspace(workspace.id, deviceId: device?.id);
+      await _applyWorkspaceContext(workspace);
     } on MultipleFlutterDevicesException catch (error) {
       final device = await _pickFlutterDevice(error.devices);
       if (device == null) return;
       _showInfo('Startar flutter run på ${device.name}…');
       await _api.launchWorkspace(workspace.id, deviceId: device.id);
+      await _applyWorkspaceContext(workspace);
     } catch (error) {
       _showError(error.toString().replaceFirst('Exception: ', ''));
     } finally {
@@ -370,6 +507,86 @@ class _DashboardPageState extends State<DashboardPage> {
     _showInfo('Settings saved.');
   }
 
+  Future<void> _openAddWorkspaceCommand() async {
+    final workspace = _activeWorkspace;
+    if (workspace == null) return;
+
+    final result = await showSuperDockDialog<WorkspaceCommandFormData>(
+      context: context,
+      builder: (context) => const AddWorkspaceCommandDialog(),
+    );
+
+    if (result == null || !mounted) return;
+
+    final action = <String, dynamic>{
+      'type': 'shell',
+      'cmd': result.command,
+    };
+    if (result.usesGitProject) {
+      action['usesGitProject'] = true;
+    } else if (result.command.startsWith('flutter ')) {
+      action['usesFlutterProject'] = true;
+    }
+
+    try {
+      await _api.updateWorkspace(workspace.id, {
+        ...workspace.toJson(),
+        'projectPath': workspace.projectPath,
+        'actions': [...workspace.actions, action],
+      });
+      await _loadWorkspaces();
+      _showInfo('Kommando tillagt i ${workspace.name}');
+    } catch (error) {
+      _showError(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Widget _buildAddWorkspaceActionButton({required bool compact}) {
+    final circleSize = compact ? 32.0 : 48.0;
+    final iconSize = compact ? 20.0 : 28.0;
+
+    return GestureDetector(
+      onTap: _openAddWorkspaceCommand,
+      child: GlassCard(
+        borderColor: AppColors.textMuted.withValues(alpha: 0.35),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: circleSize,
+              height: circleSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.textMuted.withValues(alpha: 0.45),
+                ),
+              ),
+              child: Icon(
+                Icons.add,
+                size: iconSize,
+                color: AppColors.textMuted,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              'Add',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: AppColors.textMuted,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            Text(
+              'Command',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: AppColors.textMuted,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _openCreateWorkspace() async {
     final result = await showSuperDockDialog<Object?>(
       context: context,
@@ -379,7 +596,14 @@ class _DashboardPageState extends State<DashboardPage> {
     if (result is! WorkspaceFormData || !mounted) return;
 
     try {
-      await _api.createWorkspace(result.toPayload());
+      final updated = await _api.createWorkspace(result.toPayload());
+      if (result.projectPath.trim().isNotEmpty &&
+          (updated.projectPath == null || updated.projectPath!.isEmpty)) {
+        _showError(
+          'Project path was not saved. Restart SuperDock and try again.',
+        );
+        return;
+      }
       await _loadWorkspaces();
       _showInfo('Workspace created.');
     } catch (error) {
@@ -388,27 +612,32 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _openEditWorkspace(Workspace workspace) async {
-    final apps = workspace.actions
-        .where((action) => action['type'] == 'open_app')
-        .map((action) => action['name'])
-        .join(', ');
-    final shell = workspace.actions
-        .where((action) => action['type'] == 'shell')
-        .map((action) => action['cmd'])
-        .join(', ');
+    final form = WorkspaceFormData.fromWorkspace(
+      name: workspace.name,
+      description: workspace.description,
+      shortcut: workspace.shortcut ?? '',
+      iconKey: workspace.toJson()['icon'] as String? ?? 'grid_view',
+      colorHex: workspace.accentColorHex,
+      projectPath: workspace.projectPath,
+      actions: workspace.actions,
+    );
 
     final result = await showSuperDockDialog<Object?>(
       context: context,
       builder: (context) => WorkspaceDialog(
         isEdit: true,
         workspaceId: workspace.id,
-        initialName: workspace.name,
-        initialDescription: workspace.description,
-        initialShortcut: workspace.shortcut ?? '',
-        initialIconKey: workspace.toJson()['icon'] as String? ?? 'grid_view',
-        initialColorHex: workspace.accentColorHex,
-        initialApps: apps,
-        initialShellCommand: shell,
+        initialName: form.name,
+        initialDescription: form.description,
+        initialShortcut: form.shortcut,
+        initialIconKey: form.iconKey,
+        initialColorHex: form.colorHex,
+        initialProjectPath: workspace.projectPath ?? '',
+        initialIdeApp: form.ideApp,
+        initialApps: form.apps,
+        initialShellCommand: form.shellCommand ?? '',
+        initialRunFlutterOnLaunch: form.runFlutterOnLaunch,
+        initialGitPullOnLaunch: form.gitPullOnLaunch,
       ),
     );
 
@@ -417,6 +646,9 @@ class _DashboardPageState extends State<DashboardPage> {
     if (result == 'delete') {
       try {
         await _api.deleteWorkspace(workspace.id);
+        if (_activeWorkspaceId == workspace.id) {
+          await _deactivateWorkspace();
+        }
         await _loadWorkspaces();
         _showInfo('Workspace deleted.');
       } catch (error) {
@@ -428,8 +660,34 @@ class _DashboardPageState extends State<DashboardPage> {
     if (result is! WorkspaceFormData) return;
 
     try {
-      await _api.updateWorkspace(workspace.id, result.toPayload());
+      final updated = await _api.updateWorkspace(
+        workspace.id,
+        {
+          ...workspace.toJson(),
+          ...result.toPayload(),
+        },
+      );
+      if (result.projectPath.trim().isNotEmpty &&
+          (updated.projectPath == null || updated.projectPath!.isEmpty)) {
+        _showError(
+          'Project path was not saved. Restart SuperDock and try again.',
+        );
+        return;
+      }
       await _loadWorkspaces();
+      if (_activeWorkspaceId == workspace.id) {
+        await _api.activateWorkspace(workspace.id);
+        final projectPath = result.projectPath.trim();
+        if (projectPath.isNotEmpty) {
+          final saved = await _settingsService.save(
+            _settings.copyWith(
+              flutterProjectPath: projectPath,
+              gitProjectPath: projectPath,
+            ),
+          );
+          if (mounted) setState(() => _settings = saved);
+        }
+      }
       _showInfo('Workspace updated.');
     } catch (error) {
       _showError(error.toString().replaceFirst('Exception: ', ''));
@@ -889,7 +1147,7 @@ class _DashboardPageState extends State<DashboardPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SectionTitle(icon: Icons.bolt, title: 'Quick Actions'),
+                SectionTitle(icon: Icons.bolt, title: _quickActionsTitle),
                 const SizedBox(height: AppSpacing.md),
                 _buildActionsGrid(
                   width: constraints.maxWidth,
@@ -922,7 +1180,7 @@ class _DashboardPageState extends State<DashboardPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SectionTitle(icon: Icons.bolt, title: 'Quick Actions'),
+                  SectionTitle(icon: Icons.bolt, title: _quickActionsTitle),
                   Expanded(
                     child: _buildActionsGrid(
                       width: constraints.maxWidth,
@@ -993,13 +1251,14 @@ class _DashboardPageState extends State<DashboardPage> {
           children: [
             Row(
               children: [
-                const SectionTitle(icon: Icons.bolt, title: 'Quick Actions'),
+                SectionTitle(icon: Icons.bolt, title: _quickActionsTitle),
                 const SizedBox(width: AppSpacing.md),
-                IconButton(
-                  onPressed: _openCreateAction,
-                  icon: const Icon(Icons.add_circle_outline, size: 20),
-                  tooltip: 'Create new action',
-                ),
+                if (!_showWorkspaceQuickActions)
+                  IconButton(
+                    onPressed: _openCreateAction,
+                    icon: const Icon(Icons.add_circle_outline, size: 20),
+                    tooltip: 'Create new action',
+                  ),
               ],
             ),
             const SizedBox(height: AppSpacing.lg),
@@ -1045,6 +1304,45 @@ class _DashboardPageState extends State<DashboardPage> {
     bool shrinkWrap = false,
     bool compact = false,
   }) {
+    if (_showWorkspaceQuickActions) {
+      final actions = _workspaceQuickActions;
+      final columns =
+          Responsive.actionColumns(width, actions.length + 1);
+      final tileHeight = Responsive.actionTileHeight(width, compact: compact);
+
+      return GridView.builder(
+        shrinkWrap: shrinkWrap,
+        physics: shrinkWrap
+            ? const NeverScrollableScrollPhysics()
+            : const AlwaysScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          crossAxisSpacing: AppSpacing.md,
+          mainAxisSpacing: AppSpacing.md,
+          mainAxisExtent: tileHeight,
+        ),
+        itemCount: actions.length + 1,
+        itemBuilder: (context, i) {
+          if (i == actions.length) {
+            return _buildAddWorkspaceActionButton(compact: compact);
+          }
+
+          final action = actions[i];
+          final loadingKey = '${action.workspace.id}:${action.actionIndex}';
+          return DockButton(
+            title: action.title,
+            icon: action.icon,
+            status: action.status,
+            accentColor: action.accentColor,
+            isLoading: _loadingWorkspaceActionKey == loadingKey,
+            isActive: _isAppActive(action.appName),
+            compact: compact,
+            onTap: () => _handleWorkspaceQuickAction(action),
+          );
+        },
+      );
+    }
+
     if (_dockActions.isEmpty) {
       return Center(
         child: Text(
@@ -1121,7 +1419,9 @@ class _DashboardPageState extends State<DashboardPage> {
                 description: ws.description,
                 icon: ws.icon,
                 accentColor: ws.accentColor,
+                isActive: _activeWorkspaceId == ws.id,
                 isLoading: _loadingWorkspaceId == ws.id,
+                onActivate: () => _activateWorkspace(ws),
                 onLaunch: () => _handleWorkspaceLaunch(ws),
               ),
             ),
@@ -1156,7 +1456,9 @@ class _DashboardPageState extends State<DashboardPage> {
                 description: ws.description,
                 icon: ws.icon,
                 accentColor: ws.accentColor,
+                isActive: _activeWorkspaceId == ws.id,
                 isLoading: _loadingWorkspaceId == ws.id,
+                onActivate: () => _activateWorkspace(ws),
                 onLaunch: () => _handleWorkspaceLaunch(ws),
               ),
             ),
