@@ -1,5 +1,7 @@
 const store = require("./store");
 const config = require("./config");
+const fs = require("fs");
+const path = require("path");
 
 const DEFAULT_ACTIONS = [
   {
@@ -107,7 +109,7 @@ const DEFAULT_WORKSPACES = {
     actions: [
       { type: "open_app", name: "Visual Studio Code" },
       { type: "open_app", name: "Simulator" },
-      { type: "shell", cmd: "flutter run", useFlutterProject: true },
+      { type: "shell", cmd: "flutter run", usesFlutterProject: true },
     ],
   },
   "ai-mode": {
@@ -316,23 +318,55 @@ function deleteAction(id) {
   return { ok: true };
 }
 
+function usesFlutterProject(action) {
+  return action.usesFlutterProject === true || action.useFlutterProject === true;
+}
+
+function usesGitProject(action) {
+  return action.usesGitProject === true || action.useGitProject === true;
+}
+
+function requireFlutterProjectPath() {
+  const cwd = config.getFlutterProjectPath();
+  if (!cwd) {
+    throw new Error(
+      "Flutter project path is not configured. Set it in Settings.",
+    );
+  }
+  if (!fs.existsSync(cwd)) {
+    throw new Error(`Flutter project path does not exist: ${cwd}`);
+  }
+  const pubspec = path.join(cwd, "pubspec.yaml");
+  if (!fs.existsSync(pubspec)) {
+    throw new Error(`No pubspec.yaml found in ${cwd}`);
+  }
+  return cwd;
+}
+
+function requireGitProjectPath() {
+  const cwd = config.getGitProjectPath();
+  if (!cwd) {
+    throw new Error("Git project path is not configured. Set it in Settings.");
+  }
+  if (!fs.existsSync(cwd)) {
+    throw new Error(`Git project path does not exist: ${cwd}`);
+  }
+  return cwd;
+}
+
 function resolveAction(action) {
-  if (action.type === "shell" && action.useFlutterProject) {
-    const cwd = config.getFlutterProjectPath();
-    if (!cwd) {
-      throw new Error(
-        "Flutter project path is not configured. Set it in Settings.",
-      );
-    }
+  if (action.type === "shell" && usesFlutterProject(action)) {
+    const cwd = requireFlutterProjectPath();
     return { type: "shell", cmd: action.cmd, cwd };
   }
 
-  if (action.type === "shell" && action.useGitProject) {
-    const cwd = config.getGitProjectPath();
-    if (!cwd) {
-      throw new Error("Git project path is not configured. Set it in Settings.");
-    }
+  if (action.type === "shell" && usesGitProject(action)) {
+    const cwd = requireGitProjectPath();
     return { type: "shell", cmd: action.cmd, cwd };
+  }
+
+  if (action.type === "shell" && action.cwd) {
+    return { type: "shell", cmd: action.cmd, cwd: action.cwd };
   }
 
   return action;
@@ -350,5 +384,6 @@ module.exports = {
   updateAction,
   deleteAction,
   resolveAction,
+  requireFlutterProjectPath,
   getActionById,
 };

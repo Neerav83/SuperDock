@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../core/models/action_history.dart';
 import '../core/models/connection_status.dart';
 import '../core/models/dock_action.dart';
+import '../core/models/flutter_device.dart';
 import '../core/models/process_info.dart';
 import '../core/models/system_stats.dart';
 import '../core/models/terminal_output.dart';
@@ -15,13 +16,16 @@ import '../core/services/backend_launcher.dart';
 import '../core/services/settings_service.dart';
 import '../core/services/terminal_stream_service.dart';
 import '../core/theme/colors.dart';
+import '../core/theme/responsive.dart';
 import '../core/theme/spacing.dart';
 import '../widgets/action_dialog.dart';
 import '../widgets/dock_button.dart';
+import '../widgets/flutter_device_dialog.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/section_title.dart';
 import '../widgets/settings_dialog.dart';
 import '../widgets/status_card.dart';
+import '../widgets/superdock_dialog.dart';
 import '../widgets/workspace_card.dart';
 import '../widgets/workspace_dialog.dart';
 
@@ -55,6 +59,7 @@ class _DashboardPageState extends State<DashboardPage> {
   bool _backendConnected = false;
   String? _loadingActionId;
   String? _loadingWorkspaceId;
+  final _terminalScrollController = ScrollController();
 
   @override
   void initState() {
@@ -102,6 +107,7 @@ class _DashboardPageState extends State<DashboardPage> {
           _terminal = output;
           _terminalStreamConnected = true;
         });
+        _scrollTerminalToBottom();
       });
       if (mounted) setState(() => _terminalStreamConnected = true);
     } catch (_) {
@@ -114,7 +120,19 @@ class _DashboardPageState extends State<DashboardPage> {
     _pollTimer?.cancel();
     _terminalSubscription?.cancel();
     _terminalStream.dispose();
+    _terminalScrollController.dispose();
     super.dispose();
+  }
+
+  void _scrollTerminalToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_terminalScrollController.hasClients) return;
+      _terminalScrollController.animateTo(
+        _terminalScrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   Future<void> _syncBackendConfig() async {
@@ -219,7 +237,21 @@ class _DashboardPageState extends State<DashboardPage> {
 
     setState(() => _loadingActionId = action.id);
     try {
-      await _api.runDockAction(action.id);
+      final device = _actionNeedsFlutterDevice(action)
+          ? await _resolveFlutterDevice()
+          : null;
+      if (_actionNeedsFlutterDevice(action) && device == null) return;
+
+      if (device != null) {
+        _showInfo('Startar flutter run på ${device.name}…');
+      }
+
+      await _api.runDockAction(action.id, deviceId: device?.id);
+    } on MultipleFlutterDevicesException catch (error) {
+      final device = await _pickFlutterDevice(error.devices);
+      if (device == null) return;
+      _showInfo('Startar flutter run på ${device.name}…');
+      await _api.runDockAction(action.id, deviceId: device.id);
     } catch (error) {
       _showError(error.toString().replaceFirst('Exception: ', ''));
     } finally {
@@ -233,7 +265,21 @@ class _DashboardPageState extends State<DashboardPage> {
 
     setState(() => _loadingWorkspaceId = workspace.id);
     try {
-      await _api.launchWorkspace(workspace.id);
+      final device = _workspaceNeedsFlutterDevice(workspace)
+          ? await _resolveFlutterDevice()
+          : null;
+      if (_workspaceNeedsFlutterDevice(workspace) && device == null) return;
+
+      if (device != null) {
+        _showInfo('Startar flutter run på ${device.name}…');
+      }
+
+      await _api.launchWorkspace(workspace.id, deviceId: device?.id);
+    } on MultipleFlutterDevicesException catch (error) {
+      final device = await _pickFlutterDevice(error.devices);
+      if (device == null) return;
+      _showInfo('Startar flutter run på ${device.name}…');
+      await _api.launchWorkspace(workspace.id, deviceId: device.id);
     } catch (error) {
       _showError(error.toString().replaceFirst('Exception: ', ''));
     } finally {
@@ -242,13 +288,68 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  bool _actionNeedsFlutterDevice(DockAction action) {
+    final cmd = action.shellCommand?.trim() ?? '';
+    return action.usesFlutterProject && cmd.startsWith('flutter run');
+  }
+
+  bool _workspaceNeedsFlutterDevice(Workspace workspace) {
+    for (final action in workspace.actions) {
+      final cmd = (action['cmd'] as String?)?.trim() ?? '';
+      final usesFlutter = action['usesFlutterProject'] == true ||
+          action['useFlutterProject'] == true;
+      if (usesFlutter && cmd.startsWith('flutter run')) return true;
+    }
+    return false;
+  }
+
+  Future<FlutterDevice?> _resolveFlutterDevice() async {
+    try {
+      final response = await _api.getFlutterDevices();
+      final devices = response.devices;
+
+      if (devices.isEmpty) {
+        _showError(
+          'No Flutter devices found. Connect a device or start a simulator.',
+        );
+        return null;
+      }
+
+      return _pickFlutterDevice(
+        devices,
+        selectedDeviceId: response.preferredDeviceId,
+      );
+    } catch (error) {
+      _showError(error.toString().replaceFirst('Exception: ', ''));
+      return null;
+    }
+  }
+
+  Future<FlutterDevice?> _pickFlutterDevice(
+    List<FlutterDevice> devices, {
+    String? selectedDeviceId,
+  }) async {
+    final pickedId = await showSuperDockDialog<String>(
+      context: context,
+      builder: (context) => FlutterDeviceDialog(
+        devices: devices,
+        selectedDeviceId: selectedDeviceId,
+      ),
+    );
+
+    if (pickedId == null) return null;
+
+    await _api.updateConfig({'flutterDeviceId': pickedId});
+    return devices.firstWhere((device) => device.id == pickedId);
+  }
+
   void _launchWorkspaceByIndex(int index) {
     if (index < 0 || index >= _workspaces.length) return;
     _handleWorkspaceLaunch(_workspaces[index]);
   }
 
   Future<void> _openSettings() async {
-    final updated = await showDialog<AppSettings>(
+    final updated = await showSuperDockDialog<AppSettings>(
       context: context,
       builder: (context) => SettingsDialog(initialSettings: _settings),
     );
@@ -270,7 +371,7 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _openCreateWorkspace() async {
-    final result = await showDialog<Object?>(
+    final result = await showSuperDockDialog<Object?>(
       context: context,
       builder: (context) => const WorkspaceDialog(),
     );
@@ -296,7 +397,7 @@ class _DashboardPageState extends State<DashboardPage> {
         .map((action) => action['cmd'])
         .join(', ');
 
-    final result = await showDialog<Object?>(
+    final result = await showSuperDockDialog<Object?>(
       context: context,
       builder: (context) => WorkspaceDialog(
         isEdit: true,
@@ -336,7 +437,7 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Future<void> _openCreateAction() async {
-    final result = await showDialog<Object?>(
+    final result = await showSuperDockDialog<Object?>(
       context: context,
       builder: (context) => const ActionDialog(),
     );
@@ -357,7 +458,7 @@ class _DashboardPageState extends State<DashboardPage> {
     final json = action.toJson();
     final type = json['type'] as String? ?? 'open_app';
 
-    final result = await showDialog<Object?>(
+    final result = await showSuperDockDialog<Object?>(
       context: context,
       builder: (context) => ActionDialog(
         isEdit: true,
@@ -431,7 +532,7 @@ class _DashboardPageState extends State<DashboardPage> {
     } catch (_) {}
     if (!mounted) return;
 
-    await showDialog<void>(
+    await showSuperDockDialog<void>(
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
@@ -515,29 +616,35 @@ class _DashboardPageState extends State<DashboardPage> {
     return _processes.any((process) => process.name == appName);
   }
 
+  void _launchWorkspaceIfEnabled(int index) {
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+    _launchWorkspaceByIndex(index);
+  }
+
   Map<ShortcutActivator, VoidCallback> get _shortcutBindings {
     return {
       const SingleActivator(LogicalKeyboardKey.digit1, meta: true):
-          () => _launchWorkspaceByIndex(0),
+          () => _launchWorkspaceIfEnabled(0),
       const SingleActivator(LogicalKeyboardKey.digit2, meta: true):
-          () => _launchWorkspaceByIndex(1),
+          () => _launchWorkspaceIfEnabled(1),
       const SingleActivator(LogicalKeyboardKey.digit3, meta: true):
-          () => _launchWorkspaceByIndex(2),
+          () => _launchWorkspaceIfEnabled(2),
       const SingleActivator(LogicalKeyboardKey.digit4, meta: true):
-          () => _launchWorkspaceByIndex(3),
+          () => _launchWorkspaceIfEnabled(3),
     };
   }
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final showSidebar = width >= 1200;
-    final isCompact = width < 800;
+    final size = MediaQuery.sizeOf(context);
+    final showSidebar = Responsive.showSidebar(size.width);
+    final isCompact = Responsive.isCompactWidth(size.width);
 
     return CallbackShortcuts(
       bindings: _shortcutBindings,
       child: Focus(
-        autofocus: true,
+        autofocus: false,
         child: Scaffold(
           body: Container(
             decoration: const BoxDecoration(
@@ -577,8 +684,9 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildTopNav(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final isCompact = width < 800;
+    final width = MediaQuery.sizeOf(context).width;
+    final isCompact = Responsive.isCompactWidth(width) ||
+        Responsive.useStackedTopNav(width);
 
     if (isCompact) {
       return Column(
@@ -766,61 +874,105 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildDashboardView(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final showSidebar = width >= 1200;
-    final isCompact = width < 800;
-    final actionColumns = isCompact ? 3 : (width < 1000 ? 4 : 5);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenWidth = MediaQuery.sizeOf(context).width;
+        final compact = Responsive.isCompactWidth(constraints.maxWidth);
+        final useScroll = Responsive.useScrollLayout(
+          constraints.maxWidth,
+          constraints.maxHeight,
+        );
+        final showSidebar = Responsive.showSidebar(screenWidth);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          flex: 5,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SectionTitle(icon: Icons.bolt, title: 'Quick Actions'),
-              Expanded(child: _buildActionsGrid(crossAxisCount: actionColumns)),
-            ],
-          ),
-        ),
-        const SizedBox(height: AppSpacing.xxl),
-        Expanded(
-          flex: 3,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SectionTitle(icon: Icons.grid_view, title: 'Workspaces'),
-              Expanded(child: _buildWorkspaceRow(includeNewCard: true)),
-            ],
-          ),
-        ),
-        const SizedBox(height: AppSpacing.xxl),
-        Expanded(
-          flex: 3,
-          child: isCompact
-              ? _buildTerminal(context)
-              : Row(
-                  children: [
-                    if (showSidebar) ...[
-                      Expanded(flex: 2, child: _buildRecentActions(context)),
-                      const SizedBox(width: AppSpacing.lg),
-                    ],
-                    Expanded(flex: 3, child: _buildTerminal(context)),
-                  ],
+        if (useScroll) {
+          return SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SectionTitle(icon: Icons.bolt, title: 'Quick Actions'),
+                const SizedBox(height: AppSpacing.md),
+                _buildActionsGrid(
+                  width: constraints.maxWidth,
+                  shrinkWrap: true,
+                  compact: compact,
                 ),
-        ),
-      ],
+                const SizedBox(height: AppSpacing.xxl),
+                const SectionTitle(icon: Icons.grid_view, title: 'Workspaces'),
+                const SizedBox(height: AppSpacing.md),
+                _buildWorkspaceRow(
+                  includeNewCard: true,
+                  horizontal: true,
+                ),
+                if (!showSidebar) ...[
+                  const SizedBox(height: AppSpacing.xxl),
+                  SizedBox(height: 180, child: _buildRecentActions(context)),
+                ],
+                const SizedBox(height: AppSpacing.xxl),
+                SizedBox(height: 240, child: _buildTerminal(context)),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SectionTitle(icon: Icons.bolt, title: 'Quick Actions'),
+                  Expanded(
+                    child: _buildActionsGrid(
+                      width: constraints.maxWidth,
+                      compact: compact,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xxl),
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SectionTitle(icon: Icons.grid_view, title: 'Workspaces'),
+                  Expanded(child: _buildWorkspaceRow(includeNewCard: true)),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xxl),
+            Expanded(
+              flex: 3,
+              child: Row(
+                children: [
+                  if (showSidebar) ...[
+                    Expanded(flex: 2, child: _buildRecentActions(context)),
+                    const SizedBox(width: AppSpacing.lg),
+                  ],
+                  Expanded(flex: 3, child: _buildTerminal(context)),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
   Widget _buildWorkspacesView(BuildContext context) {
+    final compact = Responsive.isCompactWidth(MediaQuery.sizeOf(context).width);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SectionTitle(icon: Icons.grid_view, title: 'Workspaces'),
         const SizedBox(height: AppSpacing.lg),
-        Expanded(child: _buildWorkspaceRow(includeNewCard: true)),
+        compact
+            ? _buildWorkspaceRow(includeNewCard: true, horizontal: true)
+            : Expanded(child: _buildWorkspaceRow(includeNewCard: true)),
         const SizedBox(height: AppSpacing.xxl),
         Expanded(child: _buildTerminal(context)),
       ],
@@ -828,34 +980,71 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildActionsView(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final isCompact = width < 800;
-    final actionColumns = isCompact ? 2 : (width < 1000 ? 3 : 4);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = Responsive.isCompactWidth(constraints.maxWidth);
+        final useScroll = Responsive.useScrollLayout(
+          constraints.maxWidth,
+          constraints.maxHeight,
+        );
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+        final content = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SectionTitle(icon: Icons.bolt, title: 'Quick Actions'),
-            const SizedBox(width: AppSpacing.md),
-            IconButton(
-              onPressed: _openCreateAction,
-              icon: const Icon(Icons.add_circle_outline, size: 20),
-              tooltip: 'Create new action',
+            Row(
+              children: [
+                const SectionTitle(icon: Icons.bolt, title: 'Quick Actions'),
+                const SizedBox(width: AppSpacing.md),
+                IconButton(
+                  onPressed: _openCreateAction,
+                  icon: const Icon(Icons.add_circle_outline, size: 20),
+                  tooltip: 'Create new action',
+                ),
+              ],
             ),
+            const SizedBox(height: AppSpacing.lg),
+            useScroll
+                ? _buildActionsGrid(
+                    width: constraints.maxWidth,
+                    shrinkWrap: true,
+                    compact: compact,
+                  )
+                : Expanded(
+                    child: _buildActionsGrid(
+                      width: constraints.maxWidth,
+                      compact: compact,
+                    ),
+                  ),
+            if (!useScroll) ...[
+              const SizedBox(height: AppSpacing.xxl),
+              Expanded(child: _buildRecentActions(context)),
+            ],
           ],
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        Expanded(child: _buildActionsGrid(crossAxisCount: actionColumns)),
-        const SizedBox(height: AppSpacing.xxl),
-        if (!isCompact || width >= 1200)
-          Expanded(child: _buildRecentActions(context)),
-      ],
+        );
+
+        if (useScroll) {
+          return SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                content,
+                const SizedBox(height: AppSpacing.xxl),
+                SizedBox(height: 200, child: _buildRecentActions(context)),
+              ],
+            ),
+          );
+        }
+
+        return content;
+      },
     );
   }
 
-  Widget _buildActionsGrid({required int crossAxisCount}) {
+  Widget _buildActionsGrid({
+    required double width,
+    bool shrinkWrap = false,
+    bool compact = false,
+  }) {
     if (_dockActions.isEmpty) {
       return Center(
         child: Text(
@@ -869,12 +1058,19 @@ class _DashboardPageState extends State<DashboardPage> {
       );
     }
 
+    final columns = Responsive.actionColumns(width, _dockActions.length);
+    final tileHeight = Responsive.actionTileHeight(width, compact: compact);
+
     return GridView.builder(
+      shrinkWrap: shrinkWrap,
+      physics: shrinkWrap
+          ? const NeverScrollableScrollPhysics()
+          : const AlwaysScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: crossAxisCount,
+        crossAxisCount: columns,
         crossAxisSpacing: AppSpacing.md,
         mainAxisSpacing: AppSpacing.md,
-        childAspectRatio: 1.1,
+        mainAxisExtent: tileHeight,
       ),
       itemCount: _dockActions.length,
       itemBuilder: (context, i) {
@@ -888,6 +1084,7 @@ class _DashboardPageState extends State<DashboardPage> {
             accentColor: action.accentColor,
             isLoading: _loadingActionId == action.id,
             isActive: _isAppActive(action.appName),
+            compact: compact,
             onTap: () => _handleDockAction(action),
           ),
         );
@@ -895,7 +1092,10 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _buildWorkspaceRow({required bool includeNewCard}) {
+  Widget _buildWorkspaceRow({
+    required bool includeNewCard,
+    bool horizontal = false,
+  }) {
     if (_workspaces.isEmpty) {
       return Center(
         child: Text(
@@ -905,6 +1105,41 @@ class _DashboardPageState extends State<DashboardPage> {
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: AppColors.textMuted,
               ),
+        ),
+      );
+    }
+
+    if (horizontal) {
+      final cards = <Widget>[
+        for (final ws in _workspaces)
+          SizedBox(
+            width: 200,
+            child: GestureDetector(
+              onLongPress: () => _openEditWorkspace(ws),
+              child: WorkspaceCard(
+                title: ws.name,
+                description: ws.description,
+                icon: ws.icon,
+                accentColor: ws.accentColor,
+                isLoading: _loadingWorkspaceId == ws.id,
+                onLaunch: () => _handleWorkspaceLaunch(ws),
+              ),
+            ),
+          ),
+        if (includeNewCard)
+          SizedBox(
+            width: 200,
+            child: NewWorkspaceCard(onTap: _openCreateWorkspace),
+          ),
+      ];
+
+      return SizedBox(
+        height: 168,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: cards.length,
+          separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.md),
+          itemBuilder: (context, index) => cards[index],
         ),
       );
     }
@@ -1084,6 +1319,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 borderRadius: BorderRadius.circular(AppSpacing.buttonRadius),
               ),
               child: ListView.builder(
+                controller: _terminalScrollController,
                 itemCount: lines.length,
                 itemBuilder: (context, i) => Text(
                   lines[i],

@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:http/http.dart' as http;
 import 'package:superdock_ui/core/services/api.dart';
 
 class BackendLauncher {
   static const defaultCorePath = '../superdock-core';
+  static const _currentApiVersion = 3;
 
   static Future<bool> ensureRunning({
     required String baseUrl,
@@ -11,7 +14,11 @@ class BackendLauncher {
     Duration timeout = const Duration(seconds: 8),
   }) async {
     final api = SuperDockApi(baseUrl: baseUrl);
-    if (await api.isReachable()) return true;
+    if (await api.isReachable()) {
+      if (await _supportsCurrentApi(baseUrl)) return true;
+      await _killBackendOnPort(Uri.parse(baseUrl));
+    }
+
     if (corePath == null || corePath.isEmpty || !Platform.isMacOS) {
       return false;
     }
@@ -36,9 +43,49 @@ class BackendLauncher {
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(const Duration(milliseconds: 400));
-      if (await api.isReachable()) return true;
+      if (await api.isReachable() && await _supportsCurrentApi(baseUrl)) {
+        return true;
+      }
     }
 
     return false;
+  }
+
+  static Future<bool> _supportsCurrentApi(String baseUrl) async {
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/meta'))
+          .timeout(const Duration(seconds: 2));
+      if (response.statusCode != 200) return false;
+
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return json['apiVersion'] == _currentApiVersion &&
+          json['flutterDevices'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> _killBackendOnPort(Uri uri) async {
+    if (!Platform.isMacOS) return;
+
+    final port = uri.port;
+    if (port <= 0) return;
+
+    try {
+      final result = await Process.run('lsof', ['-ti', 'tcp:$port']);
+      final stdout = result.stdout.toString().trim();
+      if (stdout.isEmpty) return;
+
+      for (final pid in stdout.split('\n')) {
+        final trimmed = pid.trim();
+        if (trimmed.isEmpty) continue;
+        await Process.run('kill', [trimmed]);
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+    } catch (_) {
+      // Best effort only.
+    }
   }
 }
