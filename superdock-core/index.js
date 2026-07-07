@@ -25,7 +25,12 @@ app.get("/status", (_req, res) => {
 });
 
 app.get("/meta", (_req, res) => {
-  res.json({ apiVersion: 3, backgroundShell: true, flutterDevices: true });
+  res.json({
+    apiVersion: 4,
+    backgroundShell: true,
+    flutterDevices: true,
+    workspaceProjectPath: true,
+  });
 });
 
 app.get("/system", async (_req, res) => {
@@ -132,6 +137,14 @@ app.get("/flutter/devices", async (_req, res) => {
       devices: devices.map(flutter.normalizeDevice),
       preferredDeviceId: config.getFlutterDeviceId(),
     });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/workspaces/:id/activate", (req, res) => {
+  try {
+    res.json(workspaces.activateWorkspace(req.params.id));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

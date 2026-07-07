@@ -21,6 +21,11 @@ function setConfig(updates) {
       data.config.flutterDeviceId =
         typeof value === "string" && value.trim() ? value.trim() : null;
     }
+    if ("activeWorkspaceId" in updates) {
+      const value = updates.activeWorkspaceId;
+      data.config.activeWorkspaceId =
+        typeof value === "string" && value.trim() ? value.trim() : null;
+    }
   });
   return getConfig();
 }
@@ -37,10 +42,15 @@ function getFlutterDeviceId() {
   return store.getData().config.flutterDeviceId;
 }
 
+function getActiveWorkspaceId() {
+  return store.getData().config.activeWorkspaceId;
+}
+
 module.exports = {
   getConfig,
   setConfig,
   getFlutterProjectPath,
   getGitProjectPath,
   getFlutterDeviceId,
+  getActiveWorkspaceId,
 };

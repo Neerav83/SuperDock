@@ -1,5 +1,6 @@
 const { exec, spawn } = require("child_process");
 const { promisify } = require("util");
+const fs = require("fs");
 const history = require("./history");
 const terminal = require("./terminal");
 const workspaces = require("./workspaces");
@@ -12,6 +13,15 @@ const execAsync = promisify(exec);
 
 let activeShellProcesses = 0;
 
+const APP_LAUNCH_ALIASES = {
+  "Visual Studio Code": ["Visual Studio Code", "Code"],
+};
+
+const IDE_LAUNCHERS = {
+  "Visual Studio Code": { cli: "code", aliases: ["Visual Studio Code", "Code"] },
+  Cursor: { cli: "cursor", aliases: ["Cursor"] },
+};
+
 function shellEscape(value) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -20,42 +30,112 @@ function appleScriptEscape(value) {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-async function activateApp(name) {
-  const processName = getProcessName(name);
-  const appLiteral = appleScriptEscape(name);
-  const processLiteral = appleScriptEscape(processName);
+function execWithTimeout(command, timeoutMs = 5000) {
+  return new Promise((resolve, reject) => {
+    const child = exec(command, (error, stdout, stderr) => {
+      if (error) reject(error);
+      else resolve({ stdout, stderr });
+    });
 
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`Command timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    child.on("exit", () => clearTimeout(timer));
+  });
+}
+
+async function focusApp(name) {
+  const appLiteral = appleScriptEscape(name);
+  const processLiteral = appleScriptEscape(getProcessName(name));
   const script = [
     `tell application "${appLiteral}" to activate`,
     'tell application "System Events"',
     `  if exists process "${processLiteral}" then`,
-    `    tell process "${processLiteral}"`,
-    "      set frontmost to true",
-    "      repeat with w in windows",
-    '        try',
-    '          if value of attribute "AXMinimized" of w is true then',
-    '            set value of attribute "AXMinimized" of w to false',
-    "          end if",
-    "        end try",
-    "      end repeat",
-    "    end tell",
+    `    set frontmost of process "${processLiteral}" to true`,
     "  end if",
     "end tell",
   ].join("\n");
 
-  await execAsync(`osascript -e ${shellEscape(script)}`);
+  await execWithTimeout(`osascript -e ${shellEscape(script)}`, 3000);
 }
 
-async function openApp(name) {
-  try {
-    await activateApp(name);
-    history.addEntry(`Activated ${name}`);
-    terminal.append(`> activate "${name}"`);
-  } catch {
-    await execAsync(`open -a ${shellEscape(name)}`);
-    history.addEntry(`Opened ${name}`);
-    terminal.append(`> open -a "${name}"`);
+async function openApp(name, options = {}) {
+  const projectPath = options.path?.trim() || null;
+  const launcher = IDE_LAUNCHERS[name];
+  const candidates = launcher?.aliases ?? APP_LAUNCH_ALIASES[name] ?? [name];
+
+  if (projectPath && launcher && fs.existsSync(projectPath)) {
+    terminal.append(`> open ${name} at ${projectPath}`);
+
+    if (launcher.cli) {
+      try {
+        await execWithTimeout(`${launcher.cli} ${shellEscape(projectPath)}`, 8000);
+        history.addEntry(`Opened ${name} at ${projectPath}`, true);
+        setImmediate(() => {
+          focusApp(name).catch(() => {});
+        });
+        return;
+      } catch (_) {
+        // Fall back to open -a below.
+      }
+    }
+
+    let lastError = null;
+    for (const candidate of candidates) {
+      try {
+        await execWithTimeout(
+          `open -a ${shellEscape(candidate)} ${shellEscape(projectPath)}`,
+          8000,
+        );
+        history.addEntry(`Opened ${name} at ${projectPath}`, true);
+        setImmediate(() => {
+          focusApp(name).catch(() => {});
+        });
+        return;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+
+    history.addEntry(`Failed to open ${name} at ${projectPath}`, false);
+    throw lastError ?? new Error(`Could not open ${name} at ${projectPath}`);
   }
+
+  terminal.append(`> open -a "${name}"`);
+
+  let opened = false;
+  let lastError = null;
+
+  for (const candidate of candidates) {
+    try {
+      await execWithTimeout(`open -a ${shellEscape(candidate)}`, 5000);
+      opened = true;
+      break;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (!opened) {
+    history.addEntry(`Failed to open ${name}`, false);
+    throw lastError ?? new Error(`Could not open ${name}`);
+  }
+
+  history.addEntry(`Opened ${name}`, true);
+
+  setImmediate(() => {
+    focusApp(name).catch(() => {});
+  });
+}
+
+function defaultProjectPathForIde() {
+  return (
+    config.getFlutterProjectPath()?.trim() ||
+    config.getGitProjectPath()?.trim() ||
+    null
+  );
 }
 
 function attachShellChild(child, cmd) {
@@ -179,12 +259,15 @@ async function launchWorkspace(id, options = {}) {
     throw new Error(`Unknown workspace: ${id}`);
   }
 
+  workspaces.applyWorkspaceContext(definition);
+  const context = { projectPath: definition.projectPath?.trim() || null };
+
   terminal.append(`> Launching workspace: ${definition.name}`);
 
   for (const rawAction of definition.actions) {
-    const action = dockActions.resolveAction(rawAction);
+    const action = dockActions.resolveAction(rawAction, context);
     if (action.type === "open_app") {
-      await openApp(action.name);
+      await openApp(action.name, { path: context.projectPath });
     } else if (action.type === "shell") {
       const resolved = await resolveShellAction(action, options);
       await runShell(resolved.cmd, resolved.cwd);
@@ -202,7 +285,10 @@ async function runDockAction(id, options = {}) {
   }
 
   if (action.type === "open_app") {
-    await openApp(action.appName);
+    const path = IDE_LAUNCHERS[action.appName]
+      ? defaultProjectPathForIde()
+      : null;
+    await openApp(action.appName, { path });
     return { ok: true };
   }
 
@@ -221,7 +307,7 @@ async function runDockAction(id, options = {}) {
 async function runAction(action, payload = {}) {
   switch (action) {
     case "open_app":
-      await openApp(payload.name);
+      await openApp(payload.name, { path: payload.path });
       return { ok: true };
 
     case "shell":

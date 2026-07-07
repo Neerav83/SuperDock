@@ -118,7 +118,13 @@ class SuperDockApi {
     return 'Action failed';
   }
 
-  Future<void> openApp(String name) => runAction('open_app', {'name': name});
+  Future<void> openApp(String name, {String? path}) {
+    final payload = <String, dynamic>{'name': name};
+    if (path != null && path.trim().isNotEmpty) {
+      payload['path'] = path.trim();
+    }
+    return runAction('open_app', payload);
+  }
 
   Future<void> runShell(String cmd, {String? cwd}) {
     final payload = <String, dynamic>{'cmd': cmd};
@@ -294,6 +300,18 @@ class SuperDockApi {
     return Workspace.fromJson(
       jsonDecode(response.body) as Map<String, dynamic>,
     );
+  }
+
+  Future<Map<String, dynamic>> activateWorkspace(String id) async {
+    final response = await http
+        .post(Uri.parse('$baseUrl/workspaces/$id/activate'))
+        .timeout(_timeout);
+
+    if (response.statusCode != 200) {
+      throw Exception(_readErrorMessage(response.body));
+    }
+
+    return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
   Future<void> deleteWorkspace(String id) async {

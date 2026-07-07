@@ -20,6 +20,7 @@ function defaultData() {
       flutterProjectPath: process.env.SUPERDOCK_FLUTTER_PROJECT || null,
       gitProjectPath: process.env.SUPERDOCK_GIT_PROJECT || null,
       flutterDeviceId: null,
+      activeWorkspaceId: null,
     },
     history: [],
     terminal: {
