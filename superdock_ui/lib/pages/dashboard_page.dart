@@ -210,6 +210,46 @@ class _DashboardPageState extends State<DashboardPage> {
     return 'Quick Actions';
   }
 
+  Widget _buildQuickActionsHeader(BuildContext context) {
+    final workspace = _activeWorkspace;
+    
+    if (workspace != null && workspace.imageUrl != null && workspace.imageUrl!.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppSpacing.sm),
+              child: Image.network(
+                workspace.imageUrl!,
+                width: 32,
+                height: 32,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Icon(
+                    workspace.icon,
+                    size: 18,
+                    color: AppColors.textSecondary,
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Text(
+              '${workspace.name} Actions',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    return SectionTitle(icon: Icons.bolt, title: _quickActionsTitle);
+  }
+
   Future<void> _refresh() async {
     var statusOk = false;
 
@@ -619,6 +659,7 @@ class _DashboardPageState extends State<DashboardPage> {
       iconKey: workspace.toJson()['icon'] as String? ?? 'grid_view',
       colorHex: workspace.accentColorHex,
       projectPath: workspace.projectPath,
+      imageUrl: workspace.imageUrl,
       actions: workspace.actions,
     );
 
@@ -633,6 +674,7 @@ class _DashboardPageState extends State<DashboardPage> {
         initialIconKey: form.iconKey,
         initialColorHex: form.colorHex,
         initialProjectPath: workspace.projectPath ?? '',
+        initialImageUrl: workspace.imageUrl ?? '',
         initialIdeApp: form.ideApp,
         initialApps: form.apps,
         initialShellCommand: form.shellCommand ?? '',
@@ -1147,7 +1189,7 @@ class _DashboardPageState extends State<DashboardPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SectionTitle(icon: Icons.bolt, title: _quickActionsTitle),
+                _buildQuickActionsHeader(context),
                 const SizedBox(height: AppSpacing.md),
                 _buildActionsGrid(
                   width: constraints.maxWidth,
@@ -1180,7 +1222,7 @@ class _DashboardPageState extends State<DashboardPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SectionTitle(icon: Icons.bolt, title: _quickActionsTitle),
+                  _buildQuickActionsHeader(context),
                   Expanded(
                     child: _buildActionsGrid(
                       width: constraints.maxWidth,
@@ -1251,8 +1293,7 @@ class _DashboardPageState extends State<DashboardPage> {
           children: [
             Row(
               children: [
-                SectionTitle(icon: Icons.bolt, title: _quickActionsTitle),
-                const SizedBox(width: AppSpacing.md),
+                Expanded(child: _buildQuickActionsHeader(context)),
                 if (!_showWorkspaceQuickActions)
                   IconButton(
                     onPressed: _openCreateAction,
