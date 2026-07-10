@@ -6,7 +6,7 @@ import 'package:superdock_ui/core/services/api.dart';
 
 class BackendLauncher {
   static const defaultCorePath = '../superdock-core';
-  static const _currentApiVersion = 4;
+  static const _currentApiVersion = 6;
 
   static Future<bool> ensureRunning({
     required String baseUrl,
@@ -61,7 +61,9 @@ class BackendLauncher {
       final json = jsonDecode(response.body) as Map<String, dynamic>;
       return json['apiVersion'] == _currentApiVersion &&
           json['flutterDevices'] == true &&
-          json['workspaceProjectPath'] == true;
+          json['workspaceProjectPath'] == true &&
+          json['workspaceImageUrl'] == true &&
+          json['gitInteractive'] == true;
     } catch (_) {
       return false;
     }

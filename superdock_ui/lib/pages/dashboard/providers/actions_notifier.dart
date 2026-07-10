@@ -7,6 +7,7 @@ import 'package:superdock_ui/pages/dashboard/providers/backend_notifier.dart';
 import 'package:superdock_ui/pages/dashboard/state/actions_state.dart';
 import 'package:superdock_ui/pages/dashboard/utils/dashboard_messages.dart';
 import 'package:superdock_ui/pages/dashboard/utils/flutter_device_helper.dart';
+import 'package:superdock_ui/pages/dashboard/utils/git_action_helper.dart';
 import 'package:superdock_ui/widgets/widgets.dart';
 
 final dashboardActionsProvider =
@@ -43,16 +44,31 @@ class DashboardActionsNotifier extends Notifier<ActionsState> {
 
     state = state.copyWith(loadingActionId: action.id);
     try {
-      final device = actionNeedsFlutterDevice(action)
-          ? await resolveFlutterDevice(context, _api)
-          : null;
-      if (actionNeedsFlutterDevice(action) && device == null) return;
+      final cmd = action.shellCommand?.trim() ?? '';
 
-      if (device != null) {
+      if (actionNeedsFlutterDevice(action)) {
+        final device = await resolveFlutterDevice(context, _api);
+        if (device == null) return;
+
         showDashboardInfo(context, 'Startar flutter run på ${device.name}…');
+        await _api.runDockAction(action.id, deviceId: device.id);
+        return;
       }
 
-      await _api.runDockAction(action.id, deviceId: device?.id);
+      if (commandNeedsInteractiveGit(cmd)) {
+        final projectPath = await resolveGitProjectPath(_api);
+        final resolved = await resolveInteractiveGitCommand(
+          context,
+          _api,
+          cmd: cmd,
+          projectPath: projectPath,
+        );
+        if (resolved == null) return;
+        await _api.runShell(resolved, cwd: projectPath);
+        return;
+      }
+
+      await _api.runDockAction(action.id);
     } on MultipleFlutterDevicesException catch (error) {
       final device = await pickFlutterDevice(context, _api, error.devices);
       if (device == null) return;

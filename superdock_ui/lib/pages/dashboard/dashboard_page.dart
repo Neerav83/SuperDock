@@ -64,21 +64,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         padding: const EdgeInsets.only(bottom: AppSpacing.lg),
         child: Row(
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(AppSpacing.sm),
-              child: Image.network(
-                workspace.imageUrl!,
-                width: 32,
-                height: 32,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Icon(
-                    workspace.icon,
-                    size: 18,
-                    color: AppColors.textSecondary,
-                  );
-                },
-              ),
+            WorkspaceAvatar(
+              icon: workspace.icon,
+              accentColor: workspace.accentColor,
+              imageUrl: workspace.imageUrl,
+              size: 32,
             ),
             const SizedBox(width: AppSpacing.md),
             Text(
@@ -265,6 +255,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 description: ws.description,
                 icon: ws.icon,
                 accentColor: ws.accentColor,
+                imageUrl: ws.imageUrl,
                 isActive: state.activeWorkspaceId == ws.id,
                 isLoading: state.loadingWorkspaceId == ws.id,
                 onActivate: () => _controller.activateWorkspace(context, ws),
@@ -304,6 +295,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 description: ws.description,
                 icon: ws.icon,
                 accentColor: ws.accentColor,
+                imageUrl: ws.imageUrl,
                 isActive: state.activeWorkspaceId == ws.id,
                 isLoading: state.loadingWorkspaceId == ws.id,
                 onActivate: () => _controller.activateWorkspace(context, ws),

@@ -301,8 +301,15 @@ class _ActionDialogState extends State<ActionDialog> {
                     controller: _cmdController,
                     decoration: const InputDecoration(
                       labelText: 'Command',
-                      hintText: 'git status',
+                      hintText: 'flutter run',
                     ),
+                    onChanged: (value) {
+                      final trimmed = value.trim();
+                      if (trimmed.startsWith('flutter run') &&
+                          !_usesFlutterProject) {
+                        setState(() => _usesFlutterProject = true);
+                      }
+                    },
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   TextField(

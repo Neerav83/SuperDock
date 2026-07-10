@@ -31,12 +31,6 @@ class DashboardBackendNotifier extends Notifier<BackendState> {
       _terminalStream?.dispose();
     });
 
-    ref.listen(superDockApiProvider, (previous, next) {
-      if (previous != next) {
-        Future.microtask(_connectTerminalStream);
-      }
-    });
-
     Future.microtask(_initialize);
     return const BackendState();
   }
@@ -68,15 +62,28 @@ class DashboardBackendNotifier extends Notifier<BackendState> {
     _terminalStream?.dispose();
     _terminalStream = TerminalStreamService(_api);
 
+    if (!await _api.isReachable()) {
+      if (ref.mounted) {
+        state = state.copyWith(terminalStreamConnected: false);
+      }
+      return;
+    }
+
     try {
       await _terminalStream!.connect();
-      _terminalSubscription = _terminalStream!.stream.listen((output) {
-        if (!ref.mounted) return;
-        state = state.copyWith(
-          terminal: output,
-          terminalStreamConnected: true,
-        );
-      });
+      _terminalSubscription = _terminalStream!.stream.listen(
+        (output) {
+          if (!ref.mounted) return;
+          state = state.copyWith(
+            terminal: output,
+            terminalStreamConnected: true,
+          );
+        },
+        onError: (_) {
+          if (!ref.mounted) return;
+          state = state.copyWith(terminalStreamConnected: false);
+        },
+      );
       if (ref.mounted) {
         state = state.copyWith(terminalStreamConnected: true);
       }
@@ -147,6 +154,13 @@ class DashboardBackendNotifier extends Notifier<BackendState> {
   }
 
   Future<void> reconnectAfterSettingsChange() async {
+    final settings = ref.read(dashboardSettingsProvider);
+    if (settings.autoStartBackend) {
+      await BackendLauncher.ensureRunning(
+        baseUrl: settings.backendUrl,
+        corePath: settings.backendCorePath,
+      );
+    }
     await syncBackendConfig();
     await _connectTerminalStream();
     await refresh();

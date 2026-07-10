@@ -8,6 +8,7 @@ import 'package:superdock_ui/pages/dashboard/providers/settings_notifier.dart';
 import 'package:superdock_ui/pages/dashboard/state/workspaces_state.dart';
 import 'package:superdock_ui/pages/dashboard/utils/dashboard_messages.dart';
 import 'package:superdock_ui/pages/dashboard/utils/flutter_device_helper.dart';
+import 'package:superdock_ui/pages/dashboard/utils/git_action_helper.dart';
 import 'package:superdock_ui/widgets/widgets.dart';
 
 final dashboardWorkspacesProvider =
@@ -126,7 +127,7 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
       if (cmd.isEmpty) return;
 
       final usesGit = WorkspaceActionRules.usesGitProject(action.rawAction);
-      if (action.usesFlutterProject && cmd.startsWith('flutter run')) {
+      if (WorkspaceActionRules.isFlutterRun(action.rawAction)) {
         final device = await resolveFlutterDevice(context, _api);
         if (device == null) return;
         showDashboardInfo(context, 'Startar flutter run på ${device.name}…');
@@ -134,6 +135,19 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
           'flutter run -d ${device.id}',
           cwd: projectPath,
         );
+        return;
+      }
+
+      if (commandNeedsInteractiveGit(cmd)) {
+        final resolved = await resolveInteractiveGitCommand(
+          context,
+          _api,
+          cmd: cmd,
+          projectPath: projectPath,
+        );
+        if (resolved == null) return;
+        final cwd = projectPath ?? await resolveGitProjectPath(_api);
+        await _api.runShell(resolved, cwd: cwd);
         return;
       }
 
@@ -202,10 +216,11 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
       'type': 'shell',
       'cmd': result.command,
     };
-    if (result.usesGitProject) {
-      action['usesGitProject'] = true;
-    } else if (result.command.startsWith('flutter ')) {
+    final cmd = result.command.trim();
+    if (WorkspaceActionRules.isFlutterRun(action) || cmd.startsWith('flutter ')) {
       action['usesFlutterProject'] = true;
+    } else if (result.usesGitProject || cmd.startsWith('git ')) {
+      action['usesGitProject'] = true;
     }
 
     try {

@@ -7,6 +7,7 @@ import '../models/action_history.dart';
 import '../models/connection_status.dart';
 import '../models/dock_action.dart';
 import '../models/flutter_device.dart';
+import '../models/git_change.dart';
 import '../models/process_info.dart';
 import '../models/system_stats.dart';
 import '../models/terminal_output.dart';
@@ -160,6 +161,29 @@ class SuperDockApi {
     }
 
     return FlutterDevicesResponse.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<GitChangesResponse> getGitChanges({String? projectPath}) async {
+    final query = projectPath != null && projectPath.trim().isNotEmpty
+        ? '?path=${Uri.encodeComponent(projectPath.trim())}'
+        : '';
+    final response = await http
+        .get(Uri.parse('$baseUrl/git/changes$query'))
+        .timeout(_timeout);
+
+    if (response.statusCode == 404) {
+      throw Exception(
+        'Backend saknar git-stöd. Starta om SuperDock.',
+      );
+    }
+
+    if (response.statusCode != 200) {
+      throw Exception(_readErrorMessage(response.body));
+    }
+
+    return GitChangesResponse.fromJson(
       jsonDecode(response.body) as Map<String, dynamic>,
     );
   }

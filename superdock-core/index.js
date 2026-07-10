@@ -10,6 +10,7 @@ const workspaces = require("./src/workspaces");
 const dockActions = require("./src/dock_actions");
 const config = require("./src/config");
 const flutter = require("./src/flutter");
+const git = require("./src/git");
 const { runAction } = require("./src/actions");
 
 store.load();
@@ -26,10 +27,12 @@ app.get("/status", (_req, res) => {
 
 app.get("/meta", (_req, res) => {
   res.json({
-    apiVersion: 4,
+    apiVersion: 6,
     backgroundShell: true,
     flutterDevices: true,
     workspaceProjectPath: true,
+    workspaceImageUrl: true,
+    gitInteractive: true,
   });
 });
 
@@ -137,6 +140,17 @@ app.get("/flutter/devices", async (_req, res) => {
       devices: devices.map(flutter.normalizeDevice),
       preferredDeviceId: config.getFlutterDeviceId(),
     });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get("/git/changes", async (req, res) => {
+  try {
+    const requestedPath = req.query.path?.trim();
+    const cwd = requestedPath || dockActions.requireGitProjectPath();
+    const files = await git.listAddableFiles(cwd);
+    res.json({ files, projectPath: cwd });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

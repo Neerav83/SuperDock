@@ -54,15 +54,16 @@ Future<FlutterDevice?> resolveFlutterDevice(
 
 bool workspaceNeedsFlutterDevice(Workspace workspace) {
   for (final action in workspace.actions) {
-    final cmd = (action['cmd'] as String?)?.trim() ?? '';
-    final usesFlutter = action['usesFlutterProject'] == true ||
-        action['useFlutterProject'] == true;
-    if (usesFlutter && cmd.startsWith('flutter run')) return true;
+    if (WorkspaceActionRules.isFlutterRun(action)) return true;
   }
   return false;
 }
 
 bool actionNeedsFlutterDevice(DockAction action) {
   final cmd = action.shellCommand?.trim() ?? '';
-  return action.usesFlutterProject && cmd.startsWith('flutter run');
+  return cmd.startsWith('flutter run');
+}
+
+bool workspaceActionNeedsFlutterDevice(Map<String, dynamic> action) {
+  return WorkspaceActionRules.isFlutterRun(action);
 }
