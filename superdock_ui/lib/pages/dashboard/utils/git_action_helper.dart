@@ -65,6 +65,7 @@ Future<String?> resolveGitAddCommand(
   try {
     final cwd = await resolveGitProjectPath(api, projectPath: projectPath);
     if (cwd == null) {
+      if (!context.mounted) return null;
       showDashboardError(
         context,
         'Ingen git project path är konfigurerad för detta workspace.',
@@ -73,6 +74,7 @@ Future<String?> resolveGitAddCommand(
     }
 
     final response = await api.getGitChanges(projectPath: cwd);
+    if (!context.mounted) return null;
     final selected = await showSuperDockDialog<List<String>>(
       context: context,
       builder: (context) => GitAddDialog(files: response.files),
@@ -81,6 +83,7 @@ Future<String?> resolveGitAddCommand(
     if (selected == null || selected.isEmpty) return null;
     return buildGitAddCommand(selected);
   } catch (error) {
+    if (!context.mounted) return null;
     showDashboardError(context, formatDashboardError(error));
     return null;
   }
@@ -93,6 +96,7 @@ Future<String?> resolveGitCommitCommand(
 }) async {
   final cwd = await resolveGitProjectPath(api, projectPath: projectPath);
   if (cwd == null) {
+    if (!context.mounted) return null;
     showDashboardError(
       context,
       'Ingen git project path är konfigurerad för detta workspace.',
@@ -100,6 +104,7 @@ Future<String?> resolveGitCommitCommand(
     return null;
   }
 
+  if (!context.mounted) return null;
   final message = await showSuperDockDialog<String>(
     context: context,
     builder: (context) => const GitCommitDialog(),

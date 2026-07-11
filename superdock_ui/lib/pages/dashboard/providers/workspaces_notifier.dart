@@ -46,6 +46,7 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
     try {
       await load();
     } catch (error) {
+      if (!context.mounted) return;
       showDashboardError(context, 'Could not load workspaces: $error');
     }
   }
@@ -91,8 +92,10 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
 
     try {
       await _applyWorkspaceContext(workspace);
+      if (!context.mounted) return;
       showDashboardInfo(context, 'Aktiverade ${workspace.name}');
     } catch (error) {
+      if (!context.mounted) return;
       showDashboardError(context, formatDashboardError(error));
     }
   }
@@ -103,6 +106,7 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
         );
     if (!ref.mounted) return;
     state = state.copyWith(activeWorkspaceId: null);
+    if (!context.mounted) return;
     showDashboardInfo(context, 'Visar globala quick actions igen');
   }
 
@@ -128,8 +132,9 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
 
       final usesGit = WorkspaceActionRules.usesGitProject(action.rawAction);
       if (WorkspaceActionRules.isFlutterRun(action.rawAction)) {
+        if (!context.mounted) return;
         final device = await resolveFlutterDevice(context, _api);
-        if (device == null) return;
+        if (!context.mounted || device == null) return;
         showDashboardInfo(context, 'Startar flutter run på ${device.name}…');
         await _api.runShell(
           'flutter run -d ${device.id}',
@@ -139,13 +144,14 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
       }
 
       if (commandNeedsInteractiveGit(cmd)) {
+        if (!context.mounted) return;
         final resolved = await resolveInteractiveGitCommand(
           context,
           _api,
           cmd: cmd,
           projectPath: projectPath,
         );
-        if (resolved == null) return;
+        if (!context.mounted || resolved == null) return;
         final cwd = projectPath ?? await resolveGitProjectPath(_api);
         await _api.runShell(resolved, cwd: cwd);
         return;
@@ -156,6 +162,7 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
         cwd: usesGit || action.usesFlutterProject ? projectPath : null,
       );
     } catch (error) {
+      if (!context.mounted) return;
       showDashboardError(context, formatDashboardError(error));
     } finally {
       if (ref.mounted) state = state.copyWith(loadingWorkspaceActionKey: null);
@@ -174,6 +181,7 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
       final device = workspaceNeedsFlutterDevice(workspace)
           ? await resolveFlutterDevice(context, _api)
           : null;
+      if (!context.mounted) return;
       if (workspaceNeedsFlutterDevice(workspace) && device == null) return;
 
       if (device != null) {
@@ -183,12 +191,14 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
       await _api.launchWorkspace(workspace.id, deviceId: device?.id);
       await _applyWorkspaceContext(workspace);
     } on MultipleFlutterDevicesException catch (error) {
+      if (!context.mounted) return;
       final device = await pickFlutterDevice(context, _api, error.devices);
-      if (device == null) return;
+      if (!context.mounted || device == null) return;
       showDashboardInfo(context, 'Startar flutter run på ${device.name}…');
       await _api.launchWorkspace(workspace.id, deviceId: device.id);
       await _applyWorkspaceContext(workspace);
     } catch (error) {
+      if (!context.mounted) return;
       showDashboardError(context, formatDashboardError(error));
     } finally {
       if (ref.mounted) state = state.copyWith(loadingWorkspaceId: null);
@@ -227,9 +237,12 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
           'projectPath': workspace.projectPath,
           'actions': updatedActions,
         });
+        if (!context.mounted) return;
         await loadWithFeedback(context);
+        if (!context.mounted) return;
         showDashboardInfo(context, 'Action borttagen från ${workspace.name}');
       } catch (error) {
+        if (!context.mounted) return;
         showDashboardError(context, formatDashboardError(error));
       }
       return;
@@ -261,9 +274,12 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
         'projectPath': workspace.projectPath,
         'actions': updatedActions,
       });
+      if (!context.mounted) return;
       await loadWithFeedback(context);
+      if (!context.mounted) return;
       showDashboardInfo(context, 'Action uppdaterad i ${workspace.name}');
     } catch (error) {
+      if (!context.mounted) return;
       showDashboardError(context, formatDashboardError(error));
     }
   }
@@ -296,9 +312,12 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
         'projectPath': workspace.projectPath,
         'actions': [...workspace.actions, action],
       });
+      if (!context.mounted) return;
       await loadWithFeedback(context);
+      if (!context.mounted) return;
       showDashboardInfo(context, 'Kommando tillagt i ${workspace.name}');
     } catch (error) {
+      if (!context.mounted) return;
       showDashboardError(context, formatDashboardError(error));
     }
   }
@@ -313,6 +332,7 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
 
     try {
       final updated = await _api.createWorkspace(result.toPayload());
+      if (!context.mounted) return;
       if (result.projectPath.trim().isNotEmpty &&
           (updated.projectPath == null || updated.projectPath!.isEmpty)) {
         showDashboardError(
@@ -322,8 +342,10 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
         return;
       }
       await loadWithFeedback(context);
+      if (!context.mounted) return;
       showDashboardInfo(context, 'Workspace created.');
     } catch (error) {
+      if (!context.mounted) return;
       showDashboardError(context, formatDashboardError(error));
     }
   }
@@ -365,12 +387,16 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
     if (result == 'delete') {
       try {
         await _api.deleteWorkspace(workspace.id);
+        if (!context.mounted) return;
         if (state.activeWorkspaceId == workspace.id) {
           await deactivateWorkspace(context);
         }
+        if (!context.mounted) return;
         await loadWithFeedback(context);
+        if (!context.mounted) return;
         showDashboardInfo(context, 'Workspace deleted.');
       } catch (error) {
+        if (!context.mounted) return;
         showDashboardError(context, formatDashboardError(error));
       }
       return;
@@ -386,6 +412,7 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
           ...result.toPayload(),
         },
       );
+      if (!context.mounted) return;
       if (result.projectPath.trim().isNotEmpty &&
           (updated.projectPath == null || updated.projectPath!.isEmpty)) {
         showDashboardError(
@@ -395,6 +422,7 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
         return;
       }
       await loadWithFeedback(context);
+      if (!context.mounted) return;
       if (state.activeWorkspaceId == workspace.id) {
         await _api.activateWorkspace(workspace.id);
         final projectPath = result.projectPath.trim();
@@ -407,8 +435,10 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
               );
         }
       }
+      if (!context.mounted) return;
       showDashboardInfo(context, 'Workspace updated.');
     } catch (error) {
+      if (!context.mounted) return;
       showDashboardError(context, formatDashboardError(error));
     }
   }

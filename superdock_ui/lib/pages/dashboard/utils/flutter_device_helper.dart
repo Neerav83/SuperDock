@@ -33,6 +33,7 @@ Future<FlutterDevice?> resolveFlutterDevice(
     final devices = response.devices;
 
     if (devices.isEmpty) {
+      if (!context.mounted) return null;
       showDashboardError(
         context,
         'No Flutter devices found. Connect a device or start a simulator.',
@@ -40,6 +41,7 @@ Future<FlutterDevice?> resolveFlutterDevice(
       return null;
     }
 
+    if (!context.mounted) return null;
     return pickFlutterDevice(
       context,
       api,
@@ -47,6 +49,7 @@ Future<FlutterDevice?> resolveFlutterDevice(
       selectedDeviceId: response.preferredDeviceId,
     );
   } catch (error) {
+    if (!context.mounted) return null;
     showDashboardError(context, formatDashboardError(error));
     return null;
   }

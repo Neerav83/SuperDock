@@ -35,6 +35,7 @@ class DashboardActionsNotifier extends Notifier<ActionsState> {
     try {
       await load();
     } catch (error) {
+      if (!context.mounted) return;
       showDashboardError(context, 'Could not load actions: $error');
     }
   }
@@ -48,7 +49,7 @@ class DashboardActionsNotifier extends Notifier<ActionsState> {
 
       if (actionNeedsFlutterDevice(action)) {
         final device = await resolveFlutterDevice(context, _api);
-        if (device == null) return;
+        if (!context.mounted || device == null) return;
 
         showDashboardInfo(context, 'Startar flutter run på ${device.name}…');
         await _api.runDockAction(action.id, deviceId: device.id);
@@ -57,24 +58,27 @@ class DashboardActionsNotifier extends Notifier<ActionsState> {
 
       if (commandNeedsInteractiveGit(cmd)) {
         final projectPath = await resolveGitProjectPath(_api);
+        if (!context.mounted) return;
         final resolved = await resolveInteractiveGitCommand(
           context,
           _api,
           cmd: cmd,
           projectPath: projectPath,
         );
-        if (resolved == null) return;
+        if (!context.mounted || resolved == null) return;
         await _api.runShell(resolved, cwd: projectPath);
         return;
       }
 
       await _api.runDockAction(action.id);
     } on MultipleFlutterDevicesException catch (error) {
+      if (!context.mounted) return;
       final device = await pickFlutterDevice(context, _api, error.devices);
-      if (device == null) return;
+      if (!context.mounted || device == null) return;
       showDashboardInfo(context, 'Startar flutter run på ${device.name}…');
       await _api.runDockAction(action.id, deviceId: device.id);
     } catch (error) {
+      if (!context.mounted) return;
       showDashboardError(context, formatDashboardError(error));
     } finally {
       if (ref.mounted) state = state.copyWith(loadingActionId: null);
@@ -92,9 +96,12 @@ class DashboardActionsNotifier extends Notifier<ActionsState> {
 
     try {
       await _api.createAction(result.toPayload());
+      if (!context.mounted) return;
       await loadWithFeedback(context);
+      if (!context.mounted) return;
       showDashboardInfo(context, 'Action created.');
     } catch (error) {
+      if (!context.mounted) return;
       showDashboardError(context, formatDashboardError(error));
     }
   }
@@ -131,9 +138,12 @@ class DashboardActionsNotifier extends Notifier<ActionsState> {
       }
       try {
         await _api.deleteAction(action.id);
+        if (!context.mounted) return;
         await loadWithFeedback(context);
+        if (!context.mounted) return;
         showDashboardInfo(context, 'Action deleted.');
       } catch (error) {
+        if (!context.mounted) return;
         showDashboardError(context, formatDashboardError(error));
       }
       return;
@@ -148,9 +158,12 @@ class DashboardActionsNotifier extends Notifier<ActionsState> {
 
     try {
       await _api.updateAction(action.id, result.toPayload());
+      if (!context.mounted) return;
       await loadWithFeedback(context);
+      if (!context.mounted) return;
       showDashboardInfo(context, 'Action updated.');
     } catch (error) {
+      if (!context.mounted) return;
       showDashboardError(context, formatDashboardError(error));
     }
   }

@@ -62,15 +62,27 @@ class DashboardController {
     final settings = _ref.read(dashboardSettingsProvider);
     final updated = await showSuperDockDialog<AppSettings>(
       context: context,
-      builder: (context) => SettingsDialog(initialSettings: settings),
+      builder: (context) => SettingsDialog(
+        initialSettings: settings,
+        onRestartBackend: ({required baseUrl, required corePath}) {
+          return _ref.read(dashboardBackendProvider.notifier).restartBackend(
+                baseUrl: baseUrl,
+                corePath: corePath,
+              );
+        },
+        savedBackendUrl: settings.backendUrl,
+      ),
     );
 
     if (updated == null || !context.mounted) return;
 
     await _ref.read(dashboardSettingsProvider.notifier).save(updated);
     await _ref.read(dashboardBackendProvider.notifier).reconnectAfterSettingsChange();
+    if (!context.mounted) return;
     await _ref.read(dashboardActionsProvider.notifier).loadWithFeedback(context);
+    if (!context.mounted) return;
     await _ref.read(dashboardWorkspacesProvider.notifier).loadWithFeedback(context);
+    if (!context.mounted) return;
     showDashboardInfo(context, 'Settings saved.');
   }
 

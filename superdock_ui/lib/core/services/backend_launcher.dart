@@ -16,9 +16,34 @@ class BackendLauncher {
     final api = SuperDockApi(baseUrl: baseUrl);
     if (await api.isReachable()) {
       if (await _supportsCurrentApi(baseUrl)) return true;
-      await _killBackendOnPort(Uri.parse(baseUrl));
+      await killListenersOnPort(Uri.parse(baseUrl));
     }
 
+    return _startBackend(
+      baseUrl: baseUrl,
+      corePath: corePath,
+      timeout: timeout,
+    );
+  }
+
+  static Future<bool> restart({
+    required String baseUrl,
+    String? corePath,
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    await killListenersOnPort(Uri.parse(baseUrl));
+    return _startBackend(
+      baseUrl: baseUrl,
+      corePath: corePath,
+      timeout: timeout,
+    );
+  }
+
+  static Future<bool> _startBackend({
+    required String baseUrl,
+    String? corePath,
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
     if (corePath == null || corePath.isEmpty || !Platform.isMacOS) {
       return false;
     }
@@ -28,6 +53,8 @@ class BackendLauncher {
         ? directory.path
         : Directory('${Directory.current.path}/$corePath').absolute.path;
     if (!Directory(resolvedPath).existsSync()) return false;
+
+    final api = SuperDockApi(baseUrl: baseUrl);
 
     try {
       await Process.start(
@@ -69,14 +96,18 @@ class BackendLauncher {
     }
   }
 
-  static Future<void> _killBackendOnPort(Uri uri) async {
+  static Future<void> killListenersOnPort(Uri uri) async {
     if (!Platform.isMacOS) return;
 
     final port = uri.port;
     if (port <= 0) return;
 
     try {
-      final result = await Process.run('lsof', ['-ti', 'tcp:$port']);
+      final result = await Process.run('lsof', [
+        '-ti',
+        'tcp:$port',
+        '-sTCP:LISTEN',
+      ]);
       final stdout = result.stdout.toString().trim();
       if (stdout.isEmpty) return;
 

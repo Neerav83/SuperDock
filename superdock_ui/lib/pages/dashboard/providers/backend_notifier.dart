@@ -166,6 +166,26 @@ class DashboardBackendNotifier extends Notifier<BackendState> {
     await refresh();
   }
 
+  Future<bool> restartBackend({
+    required String baseUrl,
+    required String corePath,
+  }) async {
+    final ok = await BackendLauncher.restart(
+      baseUrl: baseUrl,
+      corePath: corePath.isEmpty ? null : corePath,
+    );
+
+    if (!ok || !ref.mounted) return ok;
+
+    final savedUrl = ref.read(dashboardSettingsProvider).backendUrl;
+    if (baseUrl == savedUrl) {
+      await _connectTerminalStream();
+      await refresh();
+    }
+
+    return ok;
+  }
+
   bool isAppActive(String? appName) {
     if (appName == null) return false;
     return state.processes.any((process) => process.name == appName);
