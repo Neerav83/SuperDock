@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'core/theme/scroll_behavior.dart';
 import 'core/theme/theme.dart';
-import 'pages/dashboard_page.dart';
+import 'package:superdock_ui/pages/dashboard/dashboard_page.dart';
 
 class SuperDockApp extends StatelessWidget {
   const SuperDockApp({super.key});

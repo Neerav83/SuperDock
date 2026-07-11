@@ -27,6 +27,9 @@ class _AddWorkspaceCommandDialogState extends State<AddWorkspaceCommandDialog> {
   var _usesGitProject = true;
 
   static const _presets = <String, String>{
+    'git add': 'Git Add',
+    'git commit -m': 'Git Commit',
+    'flutter run': 'Flutter Run',
     'git pull': 'Git Pull',
     'git push': 'Git Push',
     'git status': 'Git Status',
@@ -110,6 +113,8 @@ class _AddWorkspaceCommandDialogState extends State<AddWorkspaceCommandDialog> {
                   final trimmed = value.trim();
                   if (trimmed.startsWith('git ') && !_usesGitProject) {
                     setState(() => _usesGitProject = true);
+                  } else if (trimmed.startsWith('flutter ') && _usesGitProject) {
+                    setState(() => _usesGitProject = false);
                   }
                 },
               ),

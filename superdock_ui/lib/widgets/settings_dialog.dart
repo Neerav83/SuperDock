@@ -5,13 +5,22 @@ import '../core/theme/colors.dart';
 import '../core/theme/spacing.dart';
 import 'glass_card.dart';
 
+typedef RestartBackendCallback = Future<bool> Function({
+  required String baseUrl,
+  required String corePath,
+});
+
 class SettingsDialog extends StatefulWidget {
   const SettingsDialog({
     super.key,
     required this.initialSettings,
+    this.onRestartBackend,
+    this.savedBackendUrl,
   });
 
   final AppSettings initialSettings;
+  final RestartBackendCallback? onRestartBackend;
+  final String? savedBackendUrl;
 
   @override
   State<SettingsDialog> createState() => _SettingsDialogState();
@@ -23,6 +32,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   late final TextEditingController _gitProjectPathController;
   late final TextEditingController _backendCorePathController;
   late bool _autoStartBackend;
+  bool _restartingBackend = false;
 
   @override
   void initState() {
@@ -73,6 +83,49 @@ class _SettingsDialogState extends State<SettingsDialog> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
+  }
+
+  Future<void> _restartBackend() async {
+    final onRestart = widget.onRestartBackend;
+    if (onRestart == null || _restartingBackend) return;
+
+    final baseUrl = _backendUrlController.text.trim();
+    final corePath = _backendCorePathController.text.trim();
+    if (baseUrl.isEmpty) {
+      _showError('Backend URL cannot be empty.');
+      return;
+    }
+    if (corePath.isEmpty) {
+      _showError('Backend core path is required to restart.');
+      return;
+    }
+
+    setState(() => _restartingBackend = true);
+    try {
+      final ok = await onRestart(baseUrl: baseUrl, corePath: corePath);
+      if (!mounted) return;
+
+      if (!ok) {
+        _showError('Could not restart backend. Check the core path and try again.');
+        return;
+      }
+
+      final savedUrl = widget.savedBackendUrl;
+      if (savedUrl != null && baseUrl != savedUrl) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Backend restarted. Save settings to connect to the new URL.'),
+          ),
+        );
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Backend restarted.')),
+      );
+    } finally {
+      if (mounted) setState(() => _restartingBackend = false);
+    }
   }
 
   @override
@@ -131,6 +184,28 @@ class _SettingsDialogState extends State<SettingsDialog> {
                   value: _autoStartBackend,
                   onChanged: (value) => setState(() => _autoStartBackend = value),
                 ),
+                if (widget.onRestartBackend != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  OutlinedButton.icon(
+                    onPressed: _restartingBackend ? null : _restartBackend,
+                    icon: _restartingBackend
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.restart_alt, size: 18),
+                    label: Text(
+                      _restartingBackend ? 'Restarting…' : 'Restart backend',
+                    ),
+                  ),
+                  Text(
+                    'Stops the process on the backend port and starts a fresh superdock-core.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.textMuted,
+                        ),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.lg),
                 TextField(
                   controller: _flutterProjectPathController,

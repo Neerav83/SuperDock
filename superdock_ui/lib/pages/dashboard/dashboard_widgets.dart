@@ -1,0 +1,13 @@
+export 'widgets/all_processes_dialog.dart';
+export 'widgets/dashboard_actions_section.dart';
+export 'widgets/dashboard_actions_view.dart';
+export 'widgets/dashboard_home_view.dart';
+export 'widgets/dashboard_interactions.dart';
+export 'widgets/dashboard_sidebar.dart';
+export 'widgets/dashboard_top_nav.dart';
+export 'widgets/dashboard_workspaces_section.dart';
+export 'widgets/dashboard_workspaces_view.dart';
+export 'widgets/processes_panel.dart';
+export 'widgets/recent_actions_panel.dart';
+export 'widgets/shortcuts_panel.dart';
+export 'widgets/terminal_panel.dart';

@@ -99,6 +99,8 @@ class WorkspaceActionMapper {
 
   static String _shellTitle(String cmd) {
     if (cmd.startsWith('flutter run')) return 'Flutter Run';
+    if (cmd == 'git add' || cmd == 'git add .') return 'Git Add';
+    if (cmd == 'git commit' || cmd == 'git commit -m') return 'Git Commit';
     if (cmd == 'git pull') return 'Git Pull';
     if (cmd == 'git push') return 'Git Push';
     if (cmd == 'git status') return 'Git Status';
@@ -124,6 +126,8 @@ const _appPresets = <String, _ActionPreset>{
 
 const _shellPresets = <String, _ActionPreset>{
   'flutter run': (Icons.play_arrow, Color(0xFFA855F7), 'Run Project'),
+  'git add': (Icons.note_add_outlined, Color(0xFF22D3EE), 'Stage'),
+  'git commit -m': (Icons.commit_outlined, Color(0xFF4ADE80), 'Commit'),
   'git pull': (Icons.download, Color(0xFFF97316), 'Update'),
   'git push': (Icons.upload_rounded, Color(0xFFF97316), 'Push'),
   'git status': (Icons.fact_check_outlined, Color(0xFF22D3EE), 'Status'),

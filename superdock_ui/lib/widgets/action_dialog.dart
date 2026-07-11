@@ -176,7 +176,7 @@ class _ActionDialogState extends State<ActionDialog> {
   Widget _buildIconDropdown() {
     return DropdownButtonFormField<String>(
       key: ValueKey('icon-$_iconKey'),
-      value: _iconKey,
+      initialValue: _iconKey,
       decoration: const InputDecoration(labelText: 'Icon'),
       items: iconOptions.entries
           .map(
@@ -203,7 +203,7 @@ class _ActionDialogState extends State<ActionDialog> {
 
     return DropdownButtonFormField<String>(
       key: ValueKey('color-$colorValue'),
-      value: colorValue,
+      initialValue: colorValue,
       decoration: const InputDecoration(labelText: 'Accent color'),
       items: colorOptions.entries
           .map(
@@ -235,7 +235,7 @@ class _ActionDialogState extends State<ActionDialog> {
   Widget _buildTypeSelector() {
     return DropdownButtonFormField<String>(
       key: ValueKey('type-$_type'),
-      value: _type,
+      initialValue: _type,
       decoration: const InputDecoration(labelText: 'Action type'),
       items: const [
         DropdownMenuItem(value: 'open_app', child: Text('Open App')),
@@ -301,8 +301,15 @@ class _ActionDialogState extends State<ActionDialog> {
                     controller: _cmdController,
                     decoration: const InputDecoration(
                       labelText: 'Command',
-                      hintText: 'git status',
+                      hintText: 'flutter run',
                     ),
+                    onChanged: (value) {
+                      final trimmed = value.trim();
+                      if (trimmed.startsWith('flutter run') &&
+                          !_usesFlutterProject) {
+                        setState(() => _usesFlutterProject = true);
+                      }
+                    },
                   ),
                   const SizedBox(height: AppSpacing.lg),
                   TextField(

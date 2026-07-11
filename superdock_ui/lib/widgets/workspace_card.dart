@@ -12,6 +12,7 @@ class WorkspaceCard extends StatelessWidget {
     required this.description,
     required this.icon,
     required this.accentColor,
+    this.imageUrl,
     this.onActivate,
     this.onLaunch,
     this.isLoading = false,
@@ -22,6 +23,7 @@ class WorkspaceCard extends StatelessWidget {
   final String description;
   final IconData icon;
   final Color accentColor;
+  final String? imageUrl;
   final VoidCallback? onActivate;
   final VoidCallback? onLaunch;
   final bool isLoading;
@@ -54,7 +56,12 @@ class WorkspaceCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(icon, color: accentColor, size: 24),
+                      WorkspaceAvatar(
+                        icon: icon,
+                        accentColor: accentColor,
+                        imageUrl: imageUrl,
+                        size: 24,
+                      ),
                       if (isActive) ...[
                         const SizedBox(width: AppSpacing.sm),
                         Container(
@@ -224,4 +231,40 @@ class _DashedBorderPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class WorkspaceAvatar extends StatelessWidget {
+  const WorkspaceAvatar({
+    super.key,
+    required this.icon,
+    required this.accentColor,
+    this.imageUrl,
+    this.size = 24,
+  });
+
+  final IconData icon;
+  final Color accentColor;
+  final String? imageUrl;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = imageUrl?.trim();
+    if (url == null || url.isEmpty) {
+      return Icon(icon, color: accentColor, size: size);
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppSpacing.sm),
+      child: Image.network(
+        url,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Icon(icon, color: accentColor, size: size);
+        },
+      ),
+    );
+  }
 }

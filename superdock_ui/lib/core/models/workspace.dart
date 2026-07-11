@@ -12,6 +12,7 @@ class Workspace {
     required this.accentColorHex,
     this.shortcut,
     this.projectPath,
+    this.imageUrl,
     this.actions = const [],
   });
 
@@ -23,6 +24,7 @@ class Workspace {
   final String accentColorHex;
   final String? shortcut;
   final String? projectPath;
+  final String? imageUrl;
   final List<Map<String, dynamic>> actions;
 
   factory Workspace.fromJson(Map<String, dynamic> json) {
@@ -34,6 +36,7 @@ class Workspace {
       description: json['description'] as String? ?? '',
       shortcut: json['shortcut'] as String?,
       projectPath: json['projectPath'] as String?,
+      imageUrl: json['imageUrl'] as String?,
       icon: iconForKey(json['icon'] as String? ?? 'grid_view'),
       accentColor: colorFromHex(rawHex),
       accentColorHex: normalizeColorHex(rawHex),
@@ -50,6 +53,7 @@ class Workspace {
       'description': description,
       'shortcut': shortcut,
       'projectPath': projectPath,
+      'imageUrl': imageUrl,
       'icon': _iconKey(icon),
       'accentColor': accentColorHex,
       'actions': actions,

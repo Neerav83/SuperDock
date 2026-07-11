@@ -77,6 +77,7 @@ function listWorkspaces() {
       icon,
       accentColor,
       projectPath,
+      imageUrl,
       actions,
     }) => ({
       id,
@@ -86,6 +87,7 @@ function listWorkspaces() {
       icon,
       accentColor,
       projectPath: projectPath || null,
+      imageUrl: imageUrl || null,
       actions,
     }),
   );
@@ -110,6 +112,7 @@ function createWorkspace(payload) {
     icon: payload.icon || "grid_view",
     accentColor: payload.accentColor || "#3B82F6",
     projectPath: payload.projectPath?.trim() || null,
+    imageUrl: payload.imageUrl?.trim() || null,
     actions: Array.isArray(payload.actions) ? payload.actions : [],
   };
 
@@ -139,6 +142,10 @@ function updateWorkspace(id, payload) {
       payload.projectPath !== undefined
         ? payload.projectPath?.trim() || null
         : existing.projectPath,
+    imageUrl:
+      payload.imageUrl !== undefined
+        ? payload.imageUrl?.trim() || null
+        : existing.imageUrl,
     actions: Array.isArray(payload.actions) ? payload.actions : existing.actions,
   };
 

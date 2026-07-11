@@ -24,6 +24,7 @@ class WorkspaceFormData {
     required this.iconKey,
     required this.colorHex,
     required this.projectPath,
+    this.imageUrl,
     this.ideApp,
     required this.apps,
     this.shellCommand,
@@ -38,6 +39,7 @@ class WorkspaceFormData {
   final String iconKey;
   final String colorHex;
   final String projectPath;
+  final String? imageUrl;
   final String? ideApp;
   final String apps;
   final String? shellCommand;
@@ -52,6 +54,7 @@ class WorkspaceFormData {
     required String iconKey,
     required String colorHex,
     String? projectPath,
+    String? imageUrl,
     required List<Map<String, dynamic>> actions,
   }) {
     String? ide;
@@ -88,6 +91,7 @@ class WorkspaceFormData {
       iconKey: iconKey,
       colorHex: colorHex,
       projectPath: projectPath ?? '',
+      imageUrl: imageUrl,
       ideApp: ide,
       apps: extraApps.join(', '),
       runFlutterOnLaunch: runFlutter,
@@ -142,6 +146,7 @@ class WorkspaceFormData {
       'icon': iconKey,
       'accentColor': colorHex,
       'projectPath': projectPath.trim(),
+      'imageUrl': imageUrl?.trim().isEmpty == true ? null : imageUrl?.trim(),
       'actions': actions,
     };
     if (id != null) payload['id'] = id;
@@ -159,6 +164,7 @@ class WorkspaceDialog extends StatefulWidget {
     this.initialIconKey = 'grid_view',
     this.initialColorHex = '#3B82F6',
     this.initialProjectPath = '',
+    this.initialImageUrl = '',
     this.initialIdeApp,
     this.initialApps = '',
     this.initialShellCommand = '',
@@ -174,6 +180,7 @@ class WorkspaceDialog extends StatefulWidget {
   final String initialIconKey;
   final String initialColorHex;
   final String initialProjectPath;
+  final String initialImageUrl;
   final String? initialIdeApp;
   final String initialApps;
   final String initialShellCommand;
@@ -190,6 +197,7 @@ class _WorkspaceDialogState extends State<WorkspaceDialog> {
   late final TextEditingController _descriptionController;
   late final TextEditingController _shortcutController;
   late final TextEditingController _projectPathController;
+  late final TextEditingController _imageUrlController;
   late final TextEditingController _appsController;
   late final TextEditingController _shellController;
   late String _iconKey;
@@ -207,6 +215,7 @@ class _WorkspaceDialogState extends State<WorkspaceDialog> {
     _shortcutController = TextEditingController(text: widget.initialShortcut);
     _projectPathController =
         TextEditingController(text: widget.initialProjectPath);
+    _imageUrlController = TextEditingController(text: widget.initialImageUrl);
     _appsController = TextEditingController(text: widget.initialApps);
     _shellController = TextEditingController(text: widget.initialShellCommand);
     _iconKey = _resolveIconKey(widget.initialIconKey);
@@ -226,6 +235,7 @@ class _WorkspaceDialogState extends State<WorkspaceDialog> {
     _descriptionController.dispose();
     _shortcutController.dispose();
     _projectPathController.dispose();
+    _imageUrlController.dispose();
     _appsController.dispose();
     _shellController.dispose();
     super.dispose();
@@ -251,6 +261,7 @@ class _WorkspaceDialogState extends State<WorkspaceDialog> {
       iconKey: _iconKey,
       colorHex: _colorHex,
       projectPath: projectPath,
+      imageUrl: _imageUrlController.text.trim(),
       ideApp: _ideApp,
       apps: _appsController.text,
       shellCommand: _shellController.text.trim(),
@@ -399,6 +410,15 @@ class _WorkspaceDialogState extends State<WorkspaceDialog> {
                 _buildIconDropdown(),
                 const SizedBox(height: AppSpacing.lg),
                 _buildColorDropdown(),
+                const SizedBox(height: AppSpacing.lg),
+                TextField(
+                  controller: _imageUrlController,
+                  decoration: const InputDecoration(
+                    labelText: 'Bild-URL (valfritt)',
+                    hintText: 'https://example.com/image.png',
+                    helperText: 'URL till en bild som visas bredvid workspace-namnet',
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.lg),
                 _buildIdeDropdown(),
                 const SizedBox(height: AppSpacing.lg),

@@ -27,8 +27,10 @@ class TerminalStreamService {
             _controller.add(TerminalOutput.fromJson(decoded));
           }
         },
-        onError: (error) => _controller.addError(error),
-        cancelOnError: false,
+        onError: (_) async {
+          await disconnect();
+        },
+        cancelOnError: true,
       );
     } catch (_) {
       // Fallback to polling in dashboard.

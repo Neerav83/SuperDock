@@ -47,7 +47,7 @@ class DockAction {
       'title': title,
       'icon': iconKeyForData(icon),
       'status': status,
-      'accentColor': '#${accentColor.value.toRadixString(16).substring(2).toUpperCase()}',
+      'accentColor': '#${accentColor.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
       'type': type,
     };
     if (appName != null) json['appName'] = appName;

@@ -412,5 +412,6 @@ module.exports = {
   deleteAction,
   resolveAction,
   requireFlutterProjectPath,
+  requireGitProjectPath,
   getActionById,
 };
