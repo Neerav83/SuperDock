@@ -201,6 +201,73 @@ class DashboardWorkspacesNotifier extends Notifier<WorkspacesState> {
     handleWorkspaceLaunch(context, state.workspaces[index]);
   }
 
+  Future<void> openEditWorkspaceAction(
+    BuildContext context,
+    WorkspaceQuickAction action,
+  ) async {
+    final workspace = action.workspace;
+
+    final result = await showSuperDockDialog<Object?>(
+      context: context,
+      builder: (context) => EditWorkspaceActionDialog(action: action),
+    );
+
+    if (!context.mounted || result == null) return;
+
+    if (result == 'delete') {
+      try {
+        final updatedActions = List<Map<String, dynamic>>.from(workspace.actions);
+        if (action.actionIndex < 0 || action.actionIndex >= updatedActions.length) {
+          showDashboardError(context, 'Actionen hittades inte.');
+          return;
+        }
+        updatedActions.removeAt(action.actionIndex);
+        await _api.updateWorkspace(workspace.id, {
+          ...workspace.toJson(),
+          'projectPath': workspace.projectPath,
+          'actions': updatedActions,
+        });
+        await loadWithFeedback(context);
+        showDashboardInfo(context, 'Action borttagen från ${workspace.name}');
+      } catch (error) {
+        showDashboardError(context, formatDashboardError(error));
+      }
+      return;
+    }
+
+    if (result is! WorkspaceCommandFormData) return;
+
+    try {
+      final updatedActions = List<Map<String, dynamic>>.from(workspace.actions);
+      if (action.actionIndex < 0 || action.actionIndex >= updatedActions.length) {
+        showDashboardError(context, 'Actionen hittades inte.');
+        return;
+      }
+
+      final updatedAction = <String, dynamic>{
+        'type': 'shell',
+        'cmd': result.command,
+      };
+      final cmd = result.command.trim();
+      if (WorkspaceActionRules.isFlutterRun(updatedAction) || cmd.startsWith('flutter ')) {
+        updatedAction['usesFlutterProject'] = true;
+      } else if (result.usesGitProject || cmd.startsWith('git ')) {
+        updatedAction['usesGitProject'] = true;
+      }
+
+      updatedActions[action.actionIndex] = updatedAction;
+      await _api.updateWorkspace(workspace.id, {
+        ...workspace.toJson(),
+        'projectPath': workspace.projectPath,
+        'actions': updatedActions,
+      });
+      await loadWithFeedback(context);
+      showDashboardInfo(context, 'Action uppdaterad i ${workspace.name}');
+    } catch (error) {
+      showDashboardError(context, formatDashboardError(error));
+    }
+  }
+
   Future<void> openAddWorkspaceCommand(BuildContext context) async {
     final workspace = state.activeWorkspace;
     if (workspace == null) return;

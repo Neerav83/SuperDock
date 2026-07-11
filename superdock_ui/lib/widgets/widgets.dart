@@ -1,5 +1,6 @@
 export 'action_dialog.dart';
 export 'add_workspace_command_dialog.dart';
+export 'edit_workspace_action_dialog.dart';
 export 'dock_button.dart';
 export 'flutter_device_dialog.dart';
 export 'git_add_dialog.dart';

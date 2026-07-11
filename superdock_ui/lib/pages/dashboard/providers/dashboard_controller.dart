@@ -80,6 +80,15 @@ class DashboardController {
         .openAddWorkspaceCommand(context);
   }
 
+  Future<void> openEditWorkspaceAction(
+    BuildContext context,
+    WorkspaceQuickAction action,
+  ) {
+    return _ref
+        .read(dashboardWorkspacesProvider.notifier)
+        .openEditWorkspaceAction(context, action);
+  }
+
   Future<void> openCreateWorkspace(BuildContext context) {
     return _ref.read(dashboardWorkspacesProvider.notifier).openCreateWorkspace(
           context,

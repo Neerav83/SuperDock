@@ -164,15 +164,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
           final action = actions[i];
           final loadingKey = '${action.workspace.id}:${action.actionIndex}';
-          return DockButton(
-            title: action.title,
-            icon: action.icon,
-            status: action.status,
-            accentColor: action.accentColor,
-            isLoading: state.loadingWorkspaceActionKey == loadingKey,
-            isActive: _controller.isAppActive(action.appName),
-            compact: compact,
-            onTap: () => _controller.handleWorkspaceQuickAction(context, action),
+          return GestureDetector(
+            onLongPress: () => _controller.openEditWorkspaceAction(context, action),
+            child: DockButton(
+              title: action.title,
+              icon: action.icon,
+              status: action.status,
+              accentColor: action.accentColor,
+              isLoading: state.loadingWorkspaceActionKey == loadingKey,
+              isActive: _controller.isAppActive(action.appName),
+              compact: compact,
+              onTap: () => _controller.handleWorkspaceQuickAction(context, action),
+            ),
           );
         },
       );
